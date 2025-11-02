@@ -29,7 +29,7 @@ def geocode_place(place_name):
 
 def fetch_weather(lat, lon):
     # One Call API (current + hourly)
-    url = "https://api.openweathermap.org/data/2.5/onecall"
+    url = "https://api.openweathermap.org/data/3.0/onecall"
     params = {
         "lat": lat, "lon": lon,
         "exclude": "minutely,alerts",
