@@ -18,13 +18,13 @@ jobs:
         with:
           python-version: '3.10' # یا هر نسخه 3.x دیگری که ترجیح می‌دهید
 
-      - name: 📦 Install dependencies
+- name: 📦 Install dependencies
         run: |
-          # ارتقاء pip
+          # اطمینان از نصب pip
           python -m pip install --upgrade pip
           
-          # نصب کتابخانه‌های مورد نیاز: requests (برای API) و jdatetime (برای تاریخ شمسی)
-          pip install requests jdatetime # ⬅️ حل کننده مشکل ModuleNotFoundError
+          # نصب کتابخانه‌های مورد نیاز (جایی که jdatetime اضافه شد)
+          pip install requests jdatetime 
           echo "✅ Installed packages:"
           pip list
           
@@ -47,3 +47,7 @@ jobs:
             exit 1
           }
           echo "✅ Weather Bot finished successfully at $(date -u)"
+
+          git add .
+          git commit -m "Force re-run to fix jdatetime caching issue"
+          git push origin <branch-name>
