@@ -140,7 +140,6 @@ def format_message(region_name, current_json, forecast_json, air_json):
         )
         msg += f"💨 <b>جزئیات آلودگی:</b> {comp_summary}\n"
 
-    msg += "\n📸 تصویر: نمای منطقه پانزده خرداد"
     return msg
 
 # --- ارسال پیام / عکس ---
