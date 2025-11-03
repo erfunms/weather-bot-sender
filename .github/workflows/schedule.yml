@@ -16,32 +16,27 @@ jobs:
       - name: 🐍 Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10' # یا هر نسخه 3.x دیگری که ترجیح می‌دهید
+          python-version: '3.10'
 
-      - name: 📦 Install dependencies (Force)
-        # استفاده از دستور کامل پایتون برای دور زدن مشکلات PATH و Cache
+      - name: 📦 Install dependencies (FINAL FIX)
         run: |
+          # استفاده از python3 -m pip برای حل قطعی مشکل ModuleNotFoundError
           python3 -m pip install --upgrade pip
-          python3 -m pip install requests jdatetime
+          python3 -m pip install requests jdatetime # ⬅️ حل کننده مشکل jdatetime
           echo "✅ jdatetime installed successfully."
           
       - name: 📅 Run weather sender script
         env:
-          # --- متغیرهای محیطی که از Secrets مخزن می‌آیند ---
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           OPENWEATHER_KEY: ${{ secrets.OPENWEATHER_KEY }}
           CHAT_IDS: ${{ secrets.CHAT_IDS }}
-          REGION_NAME: ${{ secrets.REGION_NAME }} # اگر به عنوان Secret تعریف شده
-          IMAGE_URL: ${{ secrets.IMAGE_URL }}     # اگر به عنوان Secret تعریف شده
-          # اگر از LAT/LON استفاده می‌کنید، باید اینجا تعریف شوند:
-          # LAT: ${{ secrets.LAT }}
-          # LON: ${{ secrets.LON }}
+          REGION_NAME: ${{ secrets.REGION_NAME }}
+          IMAGE_URL: ${{ secrets.IMAGE_URL }}
           
         run: |
           echo "🚀 Starting Weather Bot at $(date -u)"
-          python send_weather.py || {
+          python3 send_weather.py || { # ⬅️ استفاده از python3 برای اجرای اسکریپت
             echo "❌ Error: Script failed!"
             exit 1
           }
           echo "✅ Weather Bot finished successfully at $(date -u)"
-
