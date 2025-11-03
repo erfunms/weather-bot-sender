@@ -5,7 +5,7 @@ import os
 import requests
 import datetime
 import time
-import jdatetime  # برای تاریخ شمسی
+import jdatetime # برای تاریخ شمسی (باید در Action نصب شود)
 
 # --- تنظیمات اصلی ---
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -20,7 +20,7 @@ UNITS = os.environ.get("UNITS", "metric")
 if not TELEGRAM_TOKEN or not OPENWEATHER_KEY:
     raise SystemExit("⚠️ لطفاً مقادیر TELEGRAM_TOKEN و OPENWEATHER_KEY را تنظیم کنید.")
 
-# --- توابع دریافت داده‌ها ---
+# --- توابع دریافت داده‌ها (استفاده از APIهای پایدار 2.5) ---
 def geocode_place(place_name):
     url = f"http://api.openweathermap.org/geo/1.0/direct"
     params = {"q": place_name, "limit": 1, "appid": OPENWEATHER_KEY}
@@ -32,6 +32,7 @@ def geocode_place(place_name):
     return float(data[0]["lat"]), float(data[0]["lon"])
 
 def fetch_current_weather(lat, lon):
+    # Current Weather API (برای اطلاعات فعلی)
     url = "https://api.openweathermap.org/data/2.5/weather"
     params = {"lat": lat, "lon": lon, "units": UNITS, "appid": OPENWEATHER_KEY}
     r = requests.get(url, params=params, timeout=15)
@@ -39,8 +40,10 @@ def fetch_current_weather(lat, lon):
     return r.json()
 
 def fetch_forecast(lat, lon):
+    # 5-Day / 3-Hour Forecast API (برای پیش بینی ساعتی و min/max دما)
     url = "https://api.openweathermap.org/data/2.5/forecast"
-    params = {"lat": lat, "lon": lon, "units": UNITS, "appid": OPENWEATHER_KEY, "cnt": 8}
+    # cnt=8 برابر با 8 پیش بینی (24 ساعت آینده) است.
+    params = {"lat": lat, "lon": lon, "units": UNITS, "appid": OPENWEATHER_KEY, "cnt": 8} 
     r = requests.get(url, params=params, timeout=15)
     r.raise_for_status()
     return r.json()
@@ -54,12 +57,13 @@ def fetch_air_pollution(lat, lon):
 
 # --- قالب پیام نهایی ---
 def format_message(region_name, current_json, forecast_json, air_json):
-    # زمان فعلی به وقت ایران + تبدیل به شمسی
+    # زمان فعلی به وقت ایران (UTC + 3.5 ساعت) + تبدیل به شمسی
     now = datetime.datetime.utcnow() + datetime.timedelta(hours=3.5)
     j_now = jdatetime.datetime.fromgregorian(datetime=now)
     date_fa = j_now.strftime("%Y/%m/%d")
     time_fa = j_now.strftime("%H:%M")
 
+    # داده‌های آب و هوای فعلی
     current = current_json
     desc = current.get("weather", [{}])[0].get("description", "—")
     temp = round(current.get("main", {}).get("temp", 0), 1)
@@ -70,6 +74,7 @@ def format_message(region_name, current_json, forecast_json, air_json):
     temp_min = round(min(temps), 1) if temps else "—"
     temp_max = round(max(temps), 1) if temps else "—"
 
+    # احتمال بارش در بازه زمانی بعدی (3 ساعت آینده)
     pop = int(forecast_json.get("list", [{}])[0].get("pop", 0) * 100)
 
     # شاخص کیفیت هوا (AQI)
@@ -141,9 +146,11 @@ def main():
             raise SystemExit(f"❌ خطا در موقعیت‌یابی: {e}")
 
     latf, lonf = float(LAT), float(LON)
+    # فراخوانی توابع جدید
     current_weather = fetch_current_weather(latf, lonf)
     forecast = fetch_forecast(latf, lonf)
     air = fetch_air_pollution(latf, lonf)
+    
     caption = format_message(REGION_NAME, current_weather, forecast, air)
 
     chat_ids = [c.strip() for c in CHAT_IDS.split(",") if c.strip()]
