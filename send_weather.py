@@ -5,7 +5,7 @@ import os
 import requests
 import datetime
 import time
-import jdatetime # برای تاریخ شمسی (باید در Action نصب شود)
+import jdatetime
 
 # --- تنظیمات اصلی ---
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -20,9 +20,22 @@ UNITS = os.environ.get("UNITS", "metric")
 if not TELEGRAM_TOKEN or not OPENWEATHER_KEY:
     raise SystemExit("⚠️ لطفاً مقادیر TELEGRAM_TOKEN و OPENWEATHER_KEY را تنظیم کنید.")
 
-# --- توابع دریافت داده‌ها (استفاده از APIهای پایدار 2.5) ---
+# --- دیکشنری برای ترجمه وضعیت جوی ---
+WEATHER_TRANSLATIONS = {
+    "clear sky": "آسمان صاف ☀️",
+    "few clouds": "کمی ابری 🌤️",
+    "scattered clouds": "تکه‌ابرهای پراکنده 🌥️",
+    "broken clouds": "ابرهای متراکم ☁️",
+    "shower rain": "بارندگی رگباری 🌧️",
+    "rain": "باران 🌧️",
+    "thunderstorm": "رعد و برق ⛈️",
+    "snow": "برف ❄️",
+    "mist": "مه یا غبار 🌫️",
+    "overcast clouds": "آسمان ابری ☁️",
+}
+
+# --- توابع دریافت داده‌ها ---
 def geocode_place(place_name):
-    # API Geocoding
     url = f"http://api.openweathermap.org/geo/1.0/direct"
     params = {"q": place_name, "limit": 1, "appid": OPENWEATHER_KEY}
     r = requests.get(url, params=params, timeout=15)
@@ -33,7 +46,6 @@ def geocode_place(place_name):
     return float(data[0]["lat"]), float(data[0]["lon"])
 
 def fetch_current_weather(lat, lon):
-    # Current Weather API (جایگزین OneCall برای اطلاعات فعلی)
     url = "https://api.openweathermap.org/data/2.5/weather"
     params = {"lat": lat, "lon": lon, "units": UNITS, "appid": OPENWEATHER_KEY}
     r = requests.get(url, params=params, timeout=15)
@@ -41,7 +53,6 @@ def fetch_current_weather(lat, lon):
     return r.json()
 
 def fetch_forecast(lat, lon):
-    # 5-Day / 3-Hour Forecast API (برای پیش بینی ساعتی و min/max دما)
     url = "https://api.openweathermap.org/data/2.5/forecast"
     params = {"lat": lat, "lon": lon, "units": UNITS, "appid": OPENWEATHER_KEY, "cnt": 8} 
     r = requests.get(url, params=params, timeout=15)
@@ -49,7 +60,6 @@ def fetch_forecast(lat, lon):
     return r.json()
 
 def fetch_air_pollution(lat, lon):
-    # Air Pollution API
     url = "http://api.openweathermap.org/data/2.5/air_pollution"
     params = {"lat": lat, "lon": lon, "appid": OPENWEATHER_KEY}
     r = requests.get(url, params=params, timeout=15)
@@ -67,6 +77,7 @@ def format_message(region_name, current_json, forecast_json, air_json):
     # داده‌های آب و هوای فعلی
     current = current_json
     desc = current.get("weather", [{}])[0].get("description", "—")
+    desc_fa = WEATHER_TRANSLATIONS.get(desc, desc) # ⬅️ ترجمه وضعیت فعلی
     temp = round(current.get("main", {}).get("temp", 0), 1)
     humidity = current.get("main", {}).get("humidity", "—")
 
@@ -95,9 +106,10 @@ def format_message(region_name, current_json, forecast_json, air_json):
         j_ts = jdatetime.datetime.fromgregorian(datetime=ts)
         time_str = j_ts.strftime("%H:%M")
         w = h.get("weather", [{}])[0].get("description", "")
+        w_fa = WEATHER_TRANSLATIONS.get(w, w) # ⬅️ ترجمه وضعیت پیش‌بینی
         t = round(h.get("main", {}).get("temp", 0), 1)
         p = int(h.get("pop", 0) * 100)
-        forecast_lines.append(f"🕒 {time_str} | 🌤 {w} | 🌡 {t}° | ☔ {p}% احتمال بارش")
+        forecast_lines.append(f"🕒 {time_str} | {w_fa} | 🌡 {t}° | ☔ {p}% احتمال بارش")
 
     forecast_text = "\n".join(forecast_lines)
 
@@ -107,13 +119,13 @@ def format_message(region_name, current_json, forecast_json, air_json):
         f"📍 منطقه: {region_name}\n"
         f"📅 تاریخ: {date_fa}\n"
         f"⏰ ساعت: {time_fa}\n\n"
-        f"وضعیت جوی: {desc}\n"
+        f"وضعیت جوی: {desc_fa}\n" # ⬅️ استفاده از ترجمه فارسی
         f"دمای فعلی: {temp}°C\n"
         f"رطوبت: {humidity}%\n"
         f"احتمال بارش: {pop}%\n"
         f"حداقل دما: {temp_min}°C\n"
         f"حداکثر دما: {temp_max}°C\n"
-        f"شاخص کیفیت هوا: {aqi_text}\n\n"
+        f"شاخص کیفیت هوا ({aqi}): {aqi_text}\n\n" # ⬅️ اصلاح نمایش AQI
         f"<b>🔮 پیش‌بینی ۱۲ ساعت آینده:</b>\n{forecast_text}"
     )
 
