@@ -48,6 +48,3 @@ jobs:
           }
           echo "✅ Weather Bot finished successfully at $(date -u)"
 
-          git add .
-          git commit -m "Force re-run to fix jdatetime caching issue"
-          git push origin <branch-name>
