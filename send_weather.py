@@ -22,6 +22,7 @@ if not TELEGRAM_TOKEN or not OPENWEATHER_KEY:
 
 # --- توابع دریافت داده‌ها (استفاده از APIهای پایدار 2.5) ---
 def geocode_place(place_name):
+    # API Geocoding
     url = f"http://api.openweathermap.org/geo/1.0/direct"
     params = {"q": place_name, "limit": 1, "appid": OPENWEATHER_KEY}
     r = requests.get(url, params=params, timeout=15)
@@ -32,7 +33,7 @@ def geocode_place(place_name):
     return float(data[0]["lat"]), float(data[0]["lon"])
 
 def fetch_current_weather(lat, lon):
-    # Current Weather API (برای اطلاعات فعلی)
+    # Current Weather API (جایگزین OneCall برای اطلاعات فعلی)
     url = "https://api.openweathermap.org/data/2.5/weather"
     params = {"lat": lat, "lon": lon, "units": UNITS, "appid": OPENWEATHER_KEY}
     r = requests.get(url, params=params, timeout=15)
@@ -42,13 +43,13 @@ def fetch_current_weather(lat, lon):
 def fetch_forecast(lat, lon):
     # 5-Day / 3-Hour Forecast API (برای پیش بینی ساعتی و min/max دما)
     url = "https://api.openweathermap.org/data/2.5/forecast"
-    # cnt=8 برابر با 8 پیش بینی (24 ساعت آینده) است.
     params = {"lat": lat, "lon": lon, "units": UNITS, "appid": OPENWEATHER_KEY, "cnt": 8} 
     r = requests.get(url, params=params, timeout=15)
     r.raise_for_status()
     return r.json()
 
 def fetch_air_pollution(lat, lon):
+    # Air Pollution API
     url = "http://api.openweathermap.org/data/2.5/air_pollution"
     params = {"lat": lat, "lon": lon, "appid": OPENWEATHER_KEY}
     r = requests.get(url, params=params, timeout=15)
@@ -74,22 +75,20 @@ def format_message(region_name, current_json, forecast_json, air_json):
     temp_min = round(min(temps), 1) if temps else "—"
     temp_max = round(max(temps), 1) if temps else "—"
 
-    # احتمال بارش در بازه زمانی بعدی (3 ساعت آینده)
+    # احتمال بارش
     pop = int(forecast_json.get("list", [{}])[0].get("pop", 0) * 100)
 
     # شاخص کیفیت هوا (AQI)
     aq = air_json.get("list", [{}])[0] if air_json else {}
     aqi = aq.get("main", {}).get("aqi", "—")
     aqi_map = {
-        1: "🟢 خیلی تمیز — کیفیت عالی",
-        2: "🟢 خوب — هوا سالم است",
-        3: "🟡 متوسط — کمی ناسالم برای افراد حساس",
-        4: "🟠 ناسالم — افراد حساس باید احتیاط کنند",
+        1: "🟢 خیلی تمیز — کیفیت عالی", 2: "🟢 خوب — هوا سالم است",
+        3: "🟡 متوسط — کمی ناسالم برای افراد حساس", 4: "🟠 ناسالم — افراد حساس باید احتیاط کنند",
         5: "🔴 بسیار ناسالم — خطرناک برای عموم",
     }
     aqi_text = aqi_map.get(aqi, "⚪️ نامشخص")
 
-    # پیش‌بینی ۱۲ ساعت آینده (۴ بازه‌ی ۳ ساعته)
+    # پیش‌بینی ۱۲ ساعت آینده
     forecast_lines = []
     for h in forecast_json.get("list", [])[:4]:
         ts = datetime.datetime.utcfromtimestamp(h["dt"]) + datetime.timedelta(hours=3.5)
@@ -146,7 +145,6 @@ def main():
             raise SystemExit(f"❌ خطا در موقعیت‌یابی: {e}")
 
     latf, lonf = float(LAT), float(LON)
-    # فراخوانی توابع جدید
     current_weather = fetch_current_weather(latf, lonf)
     forecast = fetch_forecast(latf, lonf)
     air = fetch_air_pollution(latf, lonf)
