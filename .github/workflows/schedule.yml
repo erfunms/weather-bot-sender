@@ -4,7 +4,7 @@ on:
   schedule:
     - cron: '0 6 * * *'     # هر روز ساعت 6 صبح UTC
     - cron: '0 18 * * *'    # هر روز ساعت 6 عصر UTC
-  workflow_dispatch: {}      # اجرای دستی از GitHub
+  workflow_dispatch: {}
 
 jobs:
   send:
@@ -21,7 +21,9 @@ jobs:
       - name: 📦 Install dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          pip install --upgrade requests jdatetime
+          pip install requests jdatetime
+          echo "✅ Installed packages:"
+          pip list
 
       - name: 📅 Run weather sender script
         env:
@@ -32,6 +34,7 @@ jobs:
           IMAGE_URL: ${{ secrets.IMAGE_URL }}
         run: |
           echo "🚀 Starting Weather Bot at $(date -u)"
+          python -c "import jdatetime; print('✅ jdatetime imported successfully!')"  # تست قبل از اجرای اصلی
           python send_weather.py || {
             echo "❌ Error: Script failed!"
             exit 1
