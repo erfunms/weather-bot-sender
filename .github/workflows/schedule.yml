@@ -20,8 +20,8 @@ jobs:
 
       - name: 📦 Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install requests jdatetime
+          python -m pip install --upgrade pip setuptools wheel
+          pip install --upgrade requests jdatetime
 
       - name: 📅 Run weather sender script
         env:
@@ -31,7 +31,7 @@ jobs:
           REGION_NAME: ${{ secrets.REGION_NAME }}
           IMAGE_URL: ${{ secrets.IMAGE_URL }}
         run: |
-          echo "Starting Weather Bot at $(date -u)"
+          echo "🚀 Starting Weather Bot at $(date -u)"
           python send_weather.py || {
             echo "❌ Error: Script failed!"
             exit 1
