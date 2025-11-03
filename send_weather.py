@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 # send_weather.py
+
 import os
 import requests
 import datetime
 import time
+import jdatetime  # برای تاریخ شمسی
 
+# --- تنظیمات اصلی ---
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 OPENWEATHER_KEY = os.environ.get("OPENWEATHER_KEY")
 CHAT_IDS = os.environ.get("CHAT_IDS", "")
@@ -15,45 +18,7 @@ LON = os.environ.get("LON")
 UNITS = os.environ.get("UNITS", "metric")
 
 if not TELEGRAM_TOKEN or not OPENWEATHER_KEY:
-    raise SystemExit("Please set TELEGRAM_TOKEN and OPENWEATHER_KEY as environment variables.")
-
-# --- ترجمه‌ی وضعیت جوی به فارسی ---
-def translate_weather(desc_en):
-    desc_en = desc_en.lower()
-    mapping = {
-        "clear": "☀️ صاف",
-        "clouds": "☁️ ابری",
-        "few clouds": "🌤 کمی ابری",
-        "scattered clouds": "🌥 ابرهای پراکنده",
-        "broken clouds": "☁️ نیمه‌ابری",
-        "shower rain": "🌦 رگبار باران",
-        "rain": "🌧 بارانی",
-        "thunderstorm": "⛈ طوفانی",
-        "snow": "❄️ برفی",
-        "mist": "🌫 مه‌آلود",
-        "haze": "🌫 مه‌آلود",
-        "fog": "🌫 مه",
-    }
-    for k, v in mapping.items():
-        if k in desc_en:
-            return v
-    return desc_en.capitalize()
-
-# --- کیفیت هوا به صورت توصیفی ---
-def describe_aqi(aqi):
-    aqi = int(aqi)
-    if aqi == 1:
-        return "🟢 بسیار پاک"
-    elif aqi == 2:
-        return "🟢 پاک"
-    elif aqi == 3:
-        return "🟡 نسبتاً آلوده"
-    elif aqi == 4:
-        return "🟠 آلوده"
-    elif aqi == 5:
-        return "🔴 بسیار آلوده"
-    else:
-        return "نامشخص"
+    raise SystemExit("⚠️ لطفاً مقادیر TELEGRAM_TOKEN و OPENWEATHER_KEY را تنظیم کنید.")
 
 # --- توابع دریافت داده‌ها ---
 def geocode_place(place_name):
@@ -63,7 +28,7 @@ def geocode_place(place_name):
     r.raise_for_status()
     data = r.json()
     if not data:
-        raise ValueError("Geocoding failed, no results for place: " + place_name)
+        raise ValueError("❌ مکان موردنظر پیدا نشد: " + place_name)
     return float(data[0]["lat"]), float(data[0]["lon"])
 
 def fetch_current_weather(lat, lon):
@@ -87,82 +52,93 @@ def fetch_air_pollution(lat, lon):
     r.raise_for_status()
     return r.json()
 
-# --- قالب پیام فارسی ---
+# --- قالب پیام نهایی ---
 def format_message(region_name, current_json, forecast_json, air_json):
-    now = datetime.datetime.utcnow() + datetime.timedelta()
-    now_str = now.strftime("%Y-%m-%d %H:%M UTC")
+    # زمان فعلی به وقت ایران + تبدیل به شمسی
+    now = datetime.datetime.utcnow() + datetime.timedelta(hours=3.5)
+    j_now = jdatetime.datetime.fromgregorian(datetime=now)
+    date_fa = j_now.strftime("%Y/%m/%d")
+    time_fa = j_now.strftime("%H:%M")
 
     current = current_json
-    desc_en = current.get("weather", [{}])[0].get("description", "—")
-    desc = translate_weather(desc_en)
-    temp = current.get("main", {}).get("temp", "—")
+    desc = current.get("weather", [{}])[0].get("description", "—")
+    temp = round(current.get("main", {}).get("temp", 0), 1)
     humidity = current.get("main", {}).get("humidity", "—")
-    temp_min = current.get("main", {}).get("temp_min", "—")
-    temp_max = current.get("main", {}).get("temp_max", "—")
-    pop = forecast_json.get("list", [{}])[0].get("pop", 0) * 100 if forecast_json.get("list") else 0
 
-    # Air quality
+    # حداقل و حداکثر دما از پیش‌بینی 24 ساعت آینده
+    temps = [i["main"]["temp"] for i in forecast_json.get("list", [])[:8] if "main" in i]
+    temp_min = round(min(temps), 1) if temps else "—"
+    temp_max = round(max(temps), 1) if temps else "—"
+
+    pop = int(forecast_json.get("list", [{}])[0].get("pop", 0) * 100)
+
+    # شاخص کیفیت هوا (AQI)
     aq = air_json.get("list", [{}])[0] if air_json else {}
-    aqi_val = aq.get("main", {}).get("aqi", "—")
-    aqi_text = describe_aqi(aqi_val)
-    components = aq.get("components", {})
+    aqi = aq.get("main", {}).get("aqi", "—")
+    aqi_map = {
+        1: "🟢 خیلی تمیز — کیفیت عالی",
+        2: "🟢 خوب — هوا سالم است",
+        3: "🟡 متوسط — کمی ناسالم برای افراد حساس",
+        4: "🟠 ناسالم — افراد حساس باید احتیاط کنند",
+        5: "🔴 بسیار ناسالم — خطرناک برای عموم",
+    }
+    aqi_text = aqi_map.get(aqi, "⚪️ نامشخص")
 
-    # Forecast (12 hours = 4 * 3h)
-    hourly = forecast_json.get("list", [])[:4]
+    # پیش‌بینی ۱۲ ساعت آینده (۴ بازه‌ی ۳ ساعته)
     forecast_lines = []
-    for h in hourly:
-        ts = datetime.datetime.utcfromtimestamp(h["dt"])
-        time_str = ts.strftime("%H:%M")
-        w = translate_weather(h.get("weather", [{}])[0].get("description", ""))
-        t = h.get("main", {}).get("temp", "—")
+    for h in forecast_json.get("list", [])[:4]:
+        ts = datetime.datetime.utcfromtimestamp(h["dt"]) + datetime.timedelta(hours=3.5)
+        j_ts = jdatetime.datetime.fromgregorian(datetime=ts)
+        time_str = j_ts.strftime("%H:%M")
+        w = h.get("weather", [{}])[0].get("description", "")
+        t = round(h.get("main", {}).get("temp", 0), 1)
         p = int(h.get("pop", 0) * 100)
-        forecast_lines.append(f"🕒 {time_str} → {w} | 🌡 {t}° | 💧 احتمال بارش: {p}%")
+        forecast_lines.append(f"🕒 {time_str} | 🌤 {w} | 🌡 {t}° | ☔ {p}% احتمال بارش")
 
     forecast_text = "\n".join(forecast_lines)
 
+    # پیام خروجی
     msg = (
-        f"🌤 <b>وضعیت آب‌وهوای امروز</b>\n\n"
-        f"📍 <b>منطقه:</b> {region_name}\n"
-        f"📅 <b>تاریخ:</b> {now_str}\n\n"
-        f"🌦 <b>وضعیت جوی:</b> {desc}\n"
-        f"🌡 <b>دمای فعلی:</b> {temp}°C\n"
-        f"💧 <b>رطوبت هوا:</b> {humidity}%\n"
-        f"🌧 <b>احتمال بارش:</b> {int(pop)}%\n"
-        f"🌡 <b>حداقل دما:</b> {temp_min}°C\n"
-        f"🌡 <b>حداکثر دما:</b> {temp_max}°C\n\n"
-        f"🕒 <b>پیش‌بینی ۱۲ ساعت آینده:</b>\n{forecast_text}\n\n"
-        f"🌫 <b>شاخص کیفیت هوا:</b> {aqi_val} ({aqi_text})\n"
+        f"🌦 <b>وضعیت آب‌وهوای امروز</b>\n"
+        f"📍 منطقه: {region_name}\n"
+        f"📅 تاریخ: {date_fa}\n"
+        f"⏰ ساعت: {time_fa}\n\n"
+        f"وضعیت جوی: {desc}\n"
+        f"دمای فعلی: {temp}°C\n"
+        f"رطوبت: {humidity}%\n"
+        f"احتمال بارش: {pop}%\n"
+        f"حداقل دما: {temp_min}°C\n"
+        f"حداکثر دما: {temp_max}°C\n"
+        f"شاخص کیفیت هوا: {aqi_text}\n\n"
+        f"<b>🔮 پیش‌بینی ۱۲ ساعت آینده:</b>\n{forecast_text}"
     )
-
-    if components:
-        comp_summary = ", ".join(
-            [f"{k}:{int(v)}" for k, v in components.items() if v is not None][:5]
-        )
-        msg += f"💨 <b>جزئیات آلودگی:</b> {comp_summary}\n"
 
     return msg
 
-# --- ارسال پیام / عکس ---
+# --- توابع ارسال پیام ---
 def send_photo(chat_id, photo_url, caption_html):
-    send_url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
     data = {"chat_id": chat_id, "caption": caption_html, "parse_mode": "HTML", "photo": photo_url}
-    r = requests.post(send_url, data=data, timeout=20)
+    r = requests.post(url, data=data, timeout=20)
     r.raise_for_status()
     return r.json()
 
 def send_message(chat_id, text_html):
-    send_url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     data = {"chat_id": chat_id, "text": text_html, "parse_mode": "HTML"}
-    r = requests.post(send_url, data=data, timeout=20)
+    r = requests.post(url, data=data, timeout=20)
     r.raise_for_status()
     return r.json()
 
-# --- main ---
+# --- اجرای اصلی ---
 def main():
     global LAT, LON
     if not LAT or not LON:
-        lat, lon = geocode_place(REGION_NAME)
-        LAT, LON = str(lat), str(lon)
+        try:
+            lat, lon = geocode_place(REGION_NAME)
+            LAT, LON = str(lat), str(lon)
+        except Exception as e:
+            raise SystemExit(f"❌ خطا در موقعیت‌یابی: {e}")
 
     latf, lonf = float(LAT), float(LON)
     current_weather = fetch_current_weather(latf, lonf)
@@ -172,7 +148,7 @@ def main():
 
     chat_ids = [c.strip() for c in CHAT_IDS.split(",") if c.strip()]
     if not chat_ids:
-        raise SystemExit("No CHAT_IDS set.")
+        raise SystemExit("⚠️ لطفاً CHAT_IDS را تنظیم کنید.")
 
     for cid in chat_ids:
         try:
@@ -182,7 +158,7 @@ def main():
                 send_message(cid, caption)
             time.sleep(1)
         except Exception as e:
-            print(f"Failed to send to {cid}: {e}")
+            print(f"❌ ارسال پیام به {cid} ناموفق بود: {e}")
 
 if __name__ == "__main__":
     main()
