@@ -27,11 +27,15 @@ jobs:
           
       - name: 📅 Run weather sender script
         env:
+          # --- Secrets اصلی ---
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           OPENWEATHER_KEY: ${{ secrets.OPENWEATHER_KEY }}
           CHAT_IDS: ${{ secrets.CHAT_IDS }}
           REGION_NAME: ${{ secrets.REGION_NAME }}
           IMAGE_URL: ${{ secrets.IMAGE_URL }}
+          
+          # ⬅️ افزودن Secret جدید برای AQICN (جهت دقت بالاتر AQI)
+          AQICN_TOKEN: ${{ secrets.AQICN_TOKEN }}
           
         run: |
           echo "🚀 Starting Weather Bot at $(date -u)"
