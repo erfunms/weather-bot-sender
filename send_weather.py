@@ -10,6 +10,7 @@ import jdatetime
 # --- تنظیمات اصلی ---
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 OPENWEATHER_KEY = os.environ.get("OPENWEATHER_KEY")
+AQICN_TOKEN = os.environ.get("AQICN_TOKEN") # ⬅️ توکن جدید AQICN
 CHAT_IDS = os.environ.get("CHAT_IDS", "")
 REGION_NAME = os.environ.get("REGION_NAME", "پانزده خرداد")
 IMAGE_URL = os.environ.get("IMAGE_URL", "")
@@ -17,25 +18,41 @@ LAT = os.environ.get("LAT")
 LON = os.environ.get("LON")
 UNITS = os.environ.get("UNITS", "metric")
 
-if not TELEGRAM_TOKEN or not OPENWEATHER_KEY:
-    raise SystemExit("⚠️ لطفاً مقادیر TELEGRAM_TOKEN و OPENWEATHER_KEY را تنظیم کنید.")
+if not TELEGRAM_TOKEN or not OPENWEATHER_KEY or not AQICN_TOKEN:
+    raise SystemExit("⚠️ لطفاً تمام مقادیر لازم (TELEGRAM_TOKEN, OPENWEATHER_KEY, AQICN_TOKEN) را تنظیم کنید.")
 
-# --- دیکشنری برای ترجمه وضعیت جوی ---
+# --- دیکشنری‌ها ---
 WEATHER_TRANSLATIONS = {
-    "clear sky": "آسمان صاف ☀️",
-    "few clouds": "کمی ابری 🌤️",
-    "scattered clouds": "تکه‌ابرهای پراکنده 🌥️",
-    "broken clouds": "ابرهای متراکم ☁️",
-    "shower rain": "بارندگی رگباری 🌧️",
-    "rain": "باران 🌧️",
-    "thunderstorm": "رعد و برق ⛈️",
-    "snow": "برف ❄️",
-    "mist": "مه یا غبار 🌫️",
-    "overcast clouds": "آسمان ابری ☁️",
+    "clear sky": "آسمان صاف ☀️", "few clouds": "کمی ابری 🌤️",
+    "scattered clouds": "تکه‌ابرهای پراکنده 🌥️", "broken clouds": "ابرهای متراکم ☁️",
+    "shower rain": "بارندگی رگباری 🌧️", "rain": "باران 🌧️",
+    "thunderstorm": "رعد و برق ⛈️", "snow": "برف ❄️",
+    "mist": "مه یا غبار 🌫️", "overcast clouds": "آسمان ابری ☁️",
 }
 
+# ⬅️ مقیاس‌های دقیق AQI بر اساس استاندارد EPA
+def get_aqi_status(aqi_value):
+    if aqi_value is None or aqi_value == "—":
+        return "⚪️ نامشخص"
+    aqi = int(aqi_value)
+    if aqi <= 50:
+        return "🟢 پاک — کیفیت هوا رضایت‌بخش است."
+    elif aqi <= 100:
+        return "🟡 قابل قبول — احتیاط برای افراد حساس."
+    elif aqi <= 150:
+        return "🟠 ناسالم برای گروه‌های حساس — فعالیت‌های طولانی‌مدت را محدود کنید."
+    elif aqi <= 200:
+        return "🔴 ناسالم — همه ممکن است اثرات بهداشتی را تجربه کنند."
+    elif aqi <= 300:
+        return "🟣 بسیار ناسالم — هشدار سلامت: خطرناک برای عموم."
+    else:
+        return "🟤 خطرناک — وضعیت اضطراری سلامت."
+
 # --- توابع دریافت داده‌ها ---
+# (توجه: توابع OpenWeatherMap برای آب و هوا ثابت می‌مانند)
+
 def geocode_place(place_name):
+    # ... (کد ثابت) ...
     url = f"http://api.openweathermap.org/geo/1.0/direct"
     params = {"q": place_name, "limit": 1, "appid": OPENWEATHER_KEY}
     r = requests.get(url, params=params, timeout=15)
@@ -46,6 +63,7 @@ def geocode_place(place_name):
     return float(data[0]["lat"]), float(data[0]["lon"])
 
 def fetch_current_weather(lat, lon):
+    # ... (کد ثابت) ...
     url = "https://api.openweathermap.org/data/2.5/weather"
     params = {"lat": lat, "lon": lon, "units": UNITS, "appid": OPENWEATHER_KEY}
     r = requests.get(url, params=params, timeout=15)
@@ -53,6 +71,7 @@ def fetch_current_weather(lat, lon):
     return r.json()
 
 def fetch_forecast(lat, lon):
+    # ... (کد ثابت) ...
     url = "https://api.openweathermap.org/data/2.5/forecast"
     params = {"lat": lat, "lon": lon, "units": UNITS, "appid": OPENWEATHER_KEY, "cnt": 8} 
     r = requests.get(url, params=params, timeout=15)
@@ -60,14 +79,21 @@ def fetch_forecast(lat, lon):
     return r.json()
 
 def fetch_air_pollution(lat, lon):
-    url = "http://api.openweathermap.org/data/2.5/air_pollution"
-    params = {"lat": lat, "lon": lon, "appid": OPENWEATHER_KEY}
+    # ⬅️ جایگزینی تابع با AQICN
+    # AQICN بر اساس "here" کار می کند. ما از API آدرس ایستگاه نزدیکتر استفاده می کنیم.
+    # اما برای سادگی، فعلاً از API Here/City استفاده می‌کنیم:
+    url = f"https://api.waqi.info/feed/geo:{lat};{lon}/"
+    params = {"token": AQICN_TOKEN}
     r = requests.get(url, params=params, timeout=15)
     r.raise_for_status()
-    return r.json()
+    data = r.json()
+    
+    if data.get("status") == "ok" and data.get("data") and data["data"].get("aqi"):
+        return data["data"]["aqi"] # برمی‌گرداند عدد AQI را
+    return "—" # در صورت عدم موفقیت
 
 # --- قالب پیام نهایی ---
-def format_message(region_name, current_json, forecast_json, air_json):
+def format_message(region_name, current_json, forecast_json, aqi_value): # ⬅️ تغییر پارامتر ورودی
     # زمان فعلی به وقت ایران (UTC + 3.5 ساعت) + تبدیل به شمسی
     now = datetime.datetime.utcnow() + datetime.timedelta(hours=3.5)
     j_now = jdatetime.datetime.fromgregorian(datetime=now)
@@ -77,11 +103,11 @@ def format_message(region_name, current_json, forecast_json, air_json):
     # داده‌های آب و هوای فعلی
     current = current_json
     desc = current.get("weather", [{}])[0].get("description", "—")
-    desc_fa = WEATHER_TRANSLATIONS.get(desc, desc) # ⬅️ ترجمه وضعیت فعلی
+    desc_fa = WEATHER_TRANSLATIONS.get(desc, desc)
     temp = round(current.get("main", {}).get("temp", 0), 1)
     humidity = current.get("main", {}).get("humidity", "—")
 
-    # حداقل و حداکثر دما از پیش‌بینی 24 ساعت آینده
+    # حداقل و حداکثر دما
     temps = [i["main"]["temp"] for i in forecast_json.get("list", [])[:8] if "main" in i]
     temp_min = round(min(temps), 1) if temps else "—"
     temp_max = round(max(temps), 1) if temps else "—"
@@ -89,15 +115,9 @@ def format_message(region_name, current_json, forecast_json, air_json):
     # احتمال بارش
     pop = int(forecast_json.get("list", [{}])[0].get("pop", 0) * 100)
 
-    # شاخص کیفیت هوا (AQI)
-    aq = air_json.get("list", [{}])[0] if air_json else {}
-    aqi = aq.get("main", {}).get("aqi", "—")
-    aqi_map = {
-        1: "🟢 خیلی تمیز — کیفیت عالی", 2: "🟢 خوب — هوا سالم است",
-        3: "🟡 متوسط — کمی ناسالم برای افراد حساس", 4: "🟠 ناسالم — افراد حساس باید احتیاط کنند",
-        5: "🔴 بسیار ناسالم — خطرناک برای عموم",
-    }
-    aqi_text = aqi_map.get(aqi, "⚪️ نامشخص")
+    # شاخص کیفیت هوا (AQI) ⬅️ استفاده از تابع جدید
+    aqi = str(aqi_value)
+    aqi_text = get_aqi_status(aqi_value)
 
     # پیش‌بینی ۱۲ ساعت آینده
     forecast_lines = []
@@ -106,7 +126,7 @@ def format_message(region_name, current_json, forecast_json, air_json):
         j_ts = jdatetime.datetime.fromgregorian(datetime=ts)
         time_str = j_ts.strftime("%H:%M")
         w = h.get("weather", [{}])[0].get("description", "")
-        w_fa = WEATHER_TRANSLATIONS.get(w, w) # ⬅️ ترجمه وضعیت پیش‌بینی
+        w_fa = WEATHER_TRANSLATIONS.get(w, w)
         t = round(h.get("main", {}).get("temp", 0), 1)
         p = int(h.get("pop", 0) * 100)
         forecast_lines.append(f"🕒 {time_str} | {w_fa} | 🌡 {t}° | ☔ {p}% احتمال بارش")
@@ -119,20 +139,21 @@ def format_message(region_name, current_json, forecast_json, air_json):
         f"📍 منطقه: {region_name}\n"
         f"📅 تاریخ: {date_fa}\n"
         f"⏰ ساعت: {time_fa}\n\n"
-        f"وضعیت جوی: {desc_fa}\n" # ⬅️ استفاده از ترجمه فارسی
+        f"وضعیت جوی: {desc_fa}\n"
         f"دمای فعلی: {temp}°C\n"
         f"رطوبت: {humidity}%\n"
         f"احتمال بارش: {pop}%\n"
         f"حداقل دما: {temp_min}°C\n"
         f"حداکثر دما: {temp_max}°C\n"
-        f"شاخص کیفیت هوا ({aqi}): {aqi_text}\n\n" # ⬅️ اصلاح نمایش AQI
+        f"شاخص کیفیت هوا ({aqi}): {aqi_text}\n\n" # ⬅️ نمایش AQI دقیق
         f"<b>🔮 پیش‌بینی ۱۲ ساعت آینده:</b>\n{forecast_text}"
     )
 
     return msg
 
-# --- توابع ارسال پیام ---
+# --- توابع ارسال پیام (ثابت) ---
 def send_photo(chat_id, photo_url, caption_html):
+    # ... (کد ثابت) ...
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
     data = {"chat_id": chat_id, "caption": caption_html, "parse_mode": "HTML", "photo": photo_url}
     r = requests.post(url, data=data, timeout=20)
@@ -140,6 +161,7 @@ def send_photo(chat_id, photo_url, caption_html):
     return r.json()
 
 def send_message(chat_id, text_html):
+    # ... (کد ثابت) ...
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     data = {"chat_id": chat_id, "text": text_html, "parse_mode": "HTML"}
     r = requests.post(url, data=data, timeout=20)
@@ -159,9 +181,9 @@ def main():
     latf, lonf = float(LAT), float(LON)
     current_weather = fetch_current_weather(latf, lonf)
     forecast = fetch_forecast(latf, lonf)
-    air = fetch_air_pollution(latf, lonf)
+    aqi_value = fetch_air_pollution(latf, lonf) # ⬅️ فراخوانی AQICN
     
-    caption = format_message(REGION_NAME, current_weather, forecast, air)
+    caption = format_message(REGION_NAME, current_weather, forecast, aqi_value) # ⬅️ پاس دادن AQI
 
     chat_ids = [c.strip() for c in CHAT_IDS.split(",") if c.strip()]
     if not chat_ids:
