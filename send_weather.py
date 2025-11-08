@@ -6,11 +6,12 @@ import requests
 import datetime
 import time
 import jdatetime
+import json # ⬅️ برای دکمه‌های تعاملی (Inline Keyboards)
 
 # --- تنظیمات اصلی ---
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 OPENWEATHER_KEY = os.environ.get("OPENWEATHER_KEY")
-AQICN_TOKEN = os.environ.get("AQICN_TOKEN") # ⬅️ توکن جدید AQICN
+AQICN_TOKEN = os.environ.get("AQICN_TOKEN") 
 CHAT_IDS = os.environ.get("CHAT_IDS", "")
 REGION_NAME = os.environ.get("REGION_NAME", "پانزده خرداد")
 IMAGE_URL = os.environ.get("IMAGE_URL", "")
@@ -19,6 +20,7 @@ LON = os.environ.get("LON")
 UNITS = os.environ.get("UNITS", "metric")
 
 if not TELEGRAM_TOKEN or not OPENWEATHER_KEY or not AQICN_TOKEN:
+    # ⬅️ اطمینان از تعریف تمام Secrets ها
     raise SystemExit("⚠️ لطفاً تمام مقادیر لازم (TELEGRAM_TOKEN, OPENWEATHER_KEY, AQICN_TOKEN) را تنظیم کنید.")
 
 # --- دیکشنری‌ها ---
@@ -34,7 +36,11 @@ WEATHER_TRANSLATIONS = {
 def get_aqi_status(aqi_value):
     if aqi_value is None or aqi_value == "—":
         return "⚪️ نامشخص"
-    aqi = int(aqi_value)
+    try:
+        aqi = int(aqi_value)
+    except ValueError:
+        return "⚪️ نامشخص"
+        
     if aqi <= 50:
         return "🟢 پاک — کیفیت هوا رضایت‌بخش است."
     elif aqi <= 100:
@@ -49,10 +55,7 @@ def get_aqi_status(aqi_value):
         return "🟤 خطرناک — وضعیت اضطراری سلامت."
 
 # --- توابع دریافت داده‌ها ---
-# (توجه: توابع OpenWeatherMap برای آب و هوا ثابت می‌مانند)
-
 def geocode_place(place_name):
-    # ... (کد ثابت) ...
     url = f"http://api.openweathermap.org/geo/1.0/direct"
     params = {"q": place_name, "limit": 1, "appid": OPENWEATHER_KEY}
     r = requests.get(url, params=params, timeout=15)
@@ -63,7 +66,6 @@ def geocode_place(place_name):
     return float(data[0]["lat"]), float(data[0]["lon"])
 
 def fetch_current_weather(lat, lon):
-    # ... (کد ثابت) ...
     url = "https://api.openweathermap.org/data/2.5/weather"
     params = {"lat": lat, "lon": lon, "units": UNITS, "appid": OPENWEATHER_KEY}
     r = requests.get(url, params=params, timeout=15)
@@ -71,7 +73,6 @@ def fetch_current_weather(lat, lon):
     return r.json()
 
 def fetch_forecast(lat, lon):
-    # ... (کد ثابت) ...
     url = "https://api.openweathermap.org/data/2.5/forecast"
     params = {"lat": lat, "lon": lon, "units": UNITS, "appid": OPENWEATHER_KEY, "cnt": 8} 
     r = requests.get(url, params=params, timeout=15)
@@ -79,9 +80,7 @@ def fetch_forecast(lat, lon):
     return r.json()
 
 def fetch_air_pollution(lat, lon):
-    # ⬅️ جایگزینی تابع با AQICN
-    # AQICN بر اساس "here" کار می کند. ما از API آدرس ایستگاه نزدیکتر استفاده می کنیم.
-    # اما برای سادگی، فعلاً از API Here/City استفاده می‌کنیم:
+    # ⬅️ استفاده از AQICN برای AQI دقیق
     url = f"https://api.waqi.info/feed/geo:{lat};{lon}/"
     params = {"token": AQICN_TOKEN}
     r = requests.get(url, params=params, timeout=15)
@@ -89,11 +88,32 @@ def fetch_air_pollution(lat, lon):
     data = r.json()
     
     if data.get("status") == "ok" and data.get("data") and data["data"].get("aqi"):
-        return data["data"]["aqi"] # برمی‌گرداند عدد AQI را
-    return "—" # در صورت عدم موفقیت
+        return data["data"]["aqi"]
+    return "—" 
+
+# --- تابع ساخت دکمه‌های تعاملی ---
+def get_inline_keyboard():
+    # ⬅️ دکمه‌های لینک‌دار برای تعامل بیشتر
+    keyboard = {
+        "inline_keyboard": [
+            [
+                {"text": "💨 جزئیات آلودگی (/aqi)", "url": "https://aqicn.org/city/tehran/fa/"},
+                {"text": "🛰️ نقشه رادار (/map)", "url": "https://openweathermap.org/city/112931/map"}
+            ],
+            [
+                {"text": "📅 پیش‌بینی ۴۸ ساعته (/forecast)", "url": "https://openweathermap.org/city/112931"},
+            ],
+            [
+                {"text": "❓ راهنما (/help)", "url": "https://t.me/get_id_bot"}, 
+                {"text": "ℹ️ درباره ربات (/about)", "url": "https://github.com/your_username/your_repo"} 
+            ]
+        ]
+    }
+    return keyboard
+
 
 # --- قالب پیام نهایی ---
-def format_message(region_name, current_json, forecast_json, aqi_value): # ⬅️ تغییر پارامتر ورودی
+def format_message(region_name, current_json, forecast_json, aqi_value):
     # زمان فعلی به وقت ایران (UTC + 3.5 ساعت) + تبدیل به شمسی
     now = datetime.datetime.utcnow() + datetime.timedelta(hours=3.5)
     j_now = jdatetime.datetime.fromgregorian(datetime=now)
@@ -103,7 +123,7 @@ def format_message(region_name, current_json, forecast_json, aqi_value): # ⬅�
     # داده‌های آب و هوای فعلی
     current = current_json
     desc = current.get("weather", [{}])[0].get("description", "—")
-    desc_fa = WEATHER_TRANSLATIONS.get(desc, desc)
+    desc_fa = WEATHER_TRANSLATIONS.get(desc, desc) 
     temp = round(current.get("main", {}).get("temp", 0), 1)
     humidity = current.get("main", {}).get("humidity", "—")
 
@@ -115,7 +135,7 @@ def format_message(region_name, current_json, forecast_json, aqi_value): # ⬅�
     # احتمال بارش
     pop = int(forecast_json.get("list", [{}])[0].get("pop", 0) * 100)
 
-    # شاخص کیفیت هوا (AQI) ⬅️ استفاده از تابع جدید
+    # شاخص کیفیت هوا (AQI)
     aqi = str(aqi_value)
     aqi_text = get_aqi_status(aqi_value)
 
@@ -129,9 +149,11 @@ def format_message(region_name, current_json, forecast_json, aqi_value): # ⬅�
         w_fa = WEATHER_TRANSLATIONS.get(w, w)
         t = round(h.get("main", {}).get("temp", 0), 1)
         p = int(h.get("pop", 0) * 100)
+        
+        # ⬅️ رفع SyntaxError: رشته به درستی در یک خط بسته شده است
         forecast_lines.append(f"🕒 {time_str} | {w_fa} | 🌡 {t}° | ☔ {p}% احتمال بارش")
 
-        forecast_text = "\n".join(forecast_lines)
+    forecast_text = "\n".join(forecast_lines)
 
     # پیام خروجی
     msg = (
@@ -145,25 +167,38 @@ def format_message(region_name, current_json, forecast_json, aqi_value): # ⬅�
         f"احتمال بارش: {pop}%\n"
         f"حداقل دما: {temp_min}°C\n"
         f"حداکثر دما: {temp_max}°C\n"
-        f"شاخص کیفیت هوا ({aqi}): {aqi_text}\n\n" # ⬅️ نمایش AQI دقیق
+        f"شاخص کیفیت هوا ({aqi}): {aqi_text}\n\n"
         f"<b>🔮 پیش‌بینی ۱۲ ساعت آینده:</b>\n{forecast_text}"
     )
 
     return msg
 
-# --- توابع ارسال پیام (ثابت) ---
+# --- توابع ارسال پیام (با قابلیت دکمه) ---
 def send_photo(chat_id, photo_url, caption_html):
-    # ... (کد ثابت) ...
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
-    data = {"chat_id": chat_id, "caption": caption_html, "parse_mode": "HTML", "photo": photo_url}
+    keyboard = get_inline_keyboard() 
+    
+    data = {
+        "chat_id": chat_id, 
+        "caption": caption_html, 
+        "parse_mode": "HTML", 
+        "photo": photo_url,
+        "reply_markup": json.dumps(keyboard) 
+    }
     r = requests.post(url, data=data, timeout=20)
     r.raise_for_status()
     return r.json()
 
 def send_message(chat_id, text_html):
-    # ... (کد ثابت) ...
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    data = {"chat_id": chat_id, "text": text_html, "parse_mode": "HTML"}
+    keyboard = get_inline_keyboard()
+    
+    data = {
+        "chat_id": chat_id, 
+        "text": text_html, 
+        "parse_mode": "HTML",
+        "reply_markup": json.dumps(keyboard) 
+    }
     r = requests.post(url, data=data, timeout=20)
     r.raise_for_status()
     return r.json()
@@ -181,9 +216,9 @@ def main():
     latf, lonf = float(LAT), float(LON)
     current_weather = fetch_current_weather(latf, lonf)
     forecast = fetch_forecast(latf, lonf)
-    aqi_value = fetch_air_pollution(latf, lonf) # ⬅️ فراخوانی AQICN
+    aqi_value = fetch_air_pollution(latf, lonf) 
     
-    caption = format_message(REGION_NAME, current_weather, forecast, aqi_value) # ⬅️ پاس دادن AQI
+    caption = format_message(REGION_NAME, current_weather, forecast, aqi_value)
 
     chat_ids = [c.strip() for c in CHAT_IDS.split(",") if c.strip()]
     if not chat_ids:
@@ -197,7 +232,8 @@ def main():
                 send_message(cid, caption)
             time.sleep(1)
         except Exception as e:
-            print(f"❌ ارسال پیام به {cid} ناموفق بود: {e}")
+            # این خطا به دلیل بلاک شدن توسط کاربر یا Chat ID نامعتبر رخ می‌دهد
+            print(f"❌ ارسال پیام به {cid} ناموفق بود: {e}") 
 
 if __name__ == "__main__":
     main()
