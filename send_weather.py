@@ -6,7 +6,7 @@ import requests
 import datetime
 import time
 import jdatetime
-# import json ⬅️ این خط حذف شده است
+# import json ⬅️ حذف شد
 
 # --- تنظیمات اصلی ---
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -131,7 +131,7 @@ def format_message(region_name, current_json, forecast_json, aqi_value):
         
         forecast_lines.append(f"🕒 {time_str} | {w_fa} | 🌡 {t}° | ☔ {p}% احتمال بارش") 
 
-    # ⬅️ خط اصلاح‌شده: برای رفع SyntaxError و منطقی
+    # ⬅️ خط اصلاح‌شده: برای رفع SyntaxError و تورفتگی
     forecast_text = "\n".join(forecast_lines) 
 
     # پیام خروجی
