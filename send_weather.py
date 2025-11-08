@@ -130,7 +130,7 @@ def format_message(region_name, current_json, forecast_json, aqi_value):
         p = int(h.get("pop", 0) * 100)
         
         # ⬅️ خط 132 (اصلاح سینتکسی)
-        forecast_lines.append(f"🕒 {time_str} | {w_fa} | 🌡 {t}° | ☔ {p}% احتمال بارش") 
+        forecast_lines.append(f"🕒 {time_str} | {w_fa} | 🌡️ {t}° | ☔ {p}% احتمال بارش") 
 
     # ⬅️ خط اصلاح‌شده: خارج از حلقه برای پیوستن خطوط
     forecast_text = "\n".join(forecast_lines) 
