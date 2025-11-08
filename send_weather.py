@@ -129,7 +129,8 @@ def format_message(region_name, current_json, forecast_json, aqi_value): # ⬅�
         w_fa = WEATHER_TRANSLATIONS.get(w, w)
         t = round(h.get("main", {}).get("temp", 0), 1)
         p = int(h.get("pop", 0) * 100)
-        forecast_lines.append(f"🕒 {time_str} | {w_fa} | 🌡 {t}° | ☔ {p}% احتمال بارش")
+        forecast_lines.append(f"🕒 {time_str} | {w_fa} | 🌡 {t}° | 
+        ☔ {p}% احتمال بارش")
 
     forecast_text = "\n".join(forecast_lines)
 
