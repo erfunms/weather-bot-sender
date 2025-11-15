@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# send_weather.py (Final Version: Visual Crossing, Clean Output)
+# send_weather.py (Final Version: Visual Crossing, Clean Output, 12-Hour Forecast)
 
 import os
 import requests
@@ -111,11 +111,11 @@ def format_message(region_name, weather_json, aqi_value):
     aqi = str(aqi_value)
     aqi_text = get_aqi_status(aqi_value)
 
-    # ⬅️ منطق اصلاح شده برای ۴ نقطه زمانی آینده
+    # ⬅️ منطق اصلاح شده برای ۱۲ نقطه زمانی آینده
     forecast_lines = []
     hours_list = weather_json.get("days", [{}])[0].get("hours", [])
     
-    # ساعت فعلی UTC (ساعتی که در API استفاده می‌شود)
+    # ساعت فعلی UTC 
     now_utc = datetime.datetime.utcnow() 
     current_hour_utc = now_utc.hour 
     current_minute_utc = now_utc.minute
@@ -140,14 +140,15 @@ def format_message(region_name, weather_json, aqi_value):
              start_index = i
              break
         
-        # اگر ساعت API از ساعت هدف ما جلوتر بود (مثلاً ساعت هدف 20:00 بوده اما ساعت API به 21:00 رسیده)
+        # اگر ساعت API از ساعت هدف ما جلوتر بود 
         if hour_api_utc > target_hour_utc:
              start_index = i
              break
 
 
-    # پیش‌بینی ۴ نقطه زمانی آینده (۴ ساعت متوالی)
-    for h in hours_list[start_index:start_index + 4]:
+    # پیش‌بینی ۱۲ نقطه زمانی آینده (۱۲ ساعت متوالی)
+    # ⬅️ تغییر از 4 به 12 در این خط:
+    for h in hours_list[start_index:start_index + 12]:
         
         # تبدیل زمان API (که UTC است) به زمان ایران (+ 3.5 ساعت) و شمسی
         time_api_str = h['datetime']
@@ -180,7 +181,7 @@ def format_message(region_name, weather_json, aqi_value):
         f"حداقل دما: {temp_min}°C\n"
         f"حداکثر دما: {temp_max}°C\n"
         f"شاخص کیفیت هوا ({aqi}): {aqi_text}\n\n"
-        f"<b>🔮 پیش‌بینی ۴ ساعت آینده:</b>\n{forecast_text}" 
+        f"<b>🔮 پیش‌بینی ۱۲ ساعت آینده:</b>\n{forecast_text}" # ⬅️ عنوان تغییر کرد
     )
 
     return msg
