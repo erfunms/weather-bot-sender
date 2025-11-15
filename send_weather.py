@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# send_weather.py (Final Version: Visual Crossing, Clean Output, 12-Hour Forecast)
+# send_weather.py (Final Version: Visual Crossing, 12-Hour Forecast in 4 Intervals)
 
 import os
 import requests
@@ -111,7 +111,7 @@ def format_message(region_name, weather_json, aqi_value):
     aqi = str(aqi_value)
     aqi_text = get_aqi_status(aqi_value)
 
-    # ⬅️ منطق اصلاح شده برای ۱۲ نقطه زمانی آینده
+    # ⬅️ منطق اصلاح شده برای ۱۲ ساعت در ۴ بازه (هر ۳ ساعت یکبار)
     forecast_lines = []
     hours_list = weather_json.get("days", [{}])[0].get("hours", [])
     
@@ -146,9 +146,15 @@ def format_message(region_name, weather_json, aqi_value):
              break
 
 
-    # پیش‌بینی ۱۲ نقطه زمانی آینده (۱۲ ساعت متوالی)
-    # ⬅️ تغییر از 4 به 12 در این خط:
-    for h in hours_list[start_index:start_index + 12]:
+    # پیش‌بینی ۱۲ ساعت آینده در ۴ بازه (هر ۳ ساعت یکبار)
+    for i in range(4): # 4 نقطه زمانی
+        index_to_check = start_index + (i * 3) # پرش‌های 3 ساعته: 0, 3, 6, 9
+        
+        # اگر شاخص از محدوده لیست امروز خارج شد (مثلاً پیش‌بینی برای 00:00 فردا مورد نیاز است)
+        if index_to_check >= len(hours_list):
+             break 
+            
+        h = hours_list[index_to_check]
         
         # تبدیل زمان API (که UTC است) به زمان ایران (+ 3.5 ساعت) و شمسی
         time_api_str = h['datetime']
@@ -169,7 +175,7 @@ def format_message(region_name, weather_json, aqi_value):
 
     forecast_text = "\n".join(forecast_lines) 
 
-    # ⬅️ پیام خروجی (با حذف اعلام ساعت و منبع)
+    # ⬅️ پیام خروجی (عنوان بدون ایموجی)
     msg = (
         f"🌦 <b>وضعیت آب‌وهوای امروز</b>\n" 
         f"📍 منطقه: {region_name}\n"
@@ -181,7 +187,7 @@ def format_message(region_name, weather_json, aqi_value):
         f"حداقل دما: {temp_min}°C\n"
         f"حداکثر دما: {temp_max}°C\n"
         f"شاخص کیفیت هوا ({aqi}): {aqi_text}\n\n"
-        f"<b>🔮 پیش‌بینی ۱۲ ساعت آینده:</b>\n{forecast_text}" # ⬅️ عنوان تغییر کرد
+        f"<b>پیش‌بینی ۱۲ ساعت آینده:</b>\n{forecast_text}" 
     )
 
     return msg
