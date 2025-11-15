@@ -160,4 +160,65 @@ def format_message(region_name, weather_json, aqi_value):
         t = round(h.get("temp", 0), 1)
         p = int(h.get("precipprob", 0))
         
-        # ⬅️ رفع خطای SyntaxError و اصلاح ترتیب نمایش
+        # ⬅️ رفع خطای SyntaxError و اصلاح ترتیب نمایش: [Time] | [Weather] | [Temp]°C | [Precip]
+        forecast_lines.append(f"🕒 {time_str} | {w_fa} | 🌡 {t}°C | ☔ {p}% احتمال بارش") 
+
+    forecast_text = "\n".join(forecast_lines) 
+
+    # ⬅️ پیام خروجی (با حذف اعلام ساعت، منبع و ایموجی گوی)
+    msg = (
+        f"🌦 <b>وضعیت آب‌وهوای امروز</b>\n" 
+        f"📍 منطقه: {region_name}\n"
+        f"📅 تاریخ: {date_fa}\n"
+        f"وضعیت جوی: {desc_fa}\n"
+        f"دمای فعلی: {temp}°C\n"
+        f"رطوبت: {humidity}%\n"
+        f"احتمال بارش: {pop}%\n"
+        f"حداقل دما: {temp_min}°C\n"
+        f"حداکثر دما: {temp_max}°C\n"
+        f"شاخص کیفیت هوا ({aqi}): {aqi_text}\n\n"
+        f"<b>پیش‌بینی ۱۲ ساعت آینده:</b>\n{forecast_text}" 
+    )
+
+    return msg
+
+# --- توابع ارسال پیام (بدون تغییر) ---
+def send_photo(chat_id, photo_url, caption_html):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
+    data = {"chat_id": chat_id, "caption": caption_html, "parse_mode": "HTML", "photo": photo_url}
+    r = requests.post(url, data=data, timeout=20)
+    r.raise_for_status()
+    return r.json()
+
+def send_message(chat_id, text_html):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    data = {"chat_id": chat_id, "text": text_html, "parse_mode": "HTML"}
+    r = requests.post(url, data=data, timeout=20)
+    r.raise_for_status()
+    return r.json()
+
+# --- اجرای اصلی (بدون تغییر) ---
+def main():
+    latf, lonf = float(LAT), float(LON)
+    
+    weather_data = fetch_weather_data(latf, lonf)
+    aqi_value = fetch_air_pollution(latf, lonf) 
+    
+    caption = format_message(REGION_NAME, weather_data, aqi_value)
+
+    chat_ids = [c.strip() for c in CHAT_IDS.split(",") if c.strip()]
+    if not chat_ids:
+        raise SystemExit("⚠️ لطفاً CHAT_IDS را تنظیم کنید.")
+
+    for cid in chat_ids:
+        try:
+            if IMAGE_URL:
+                send_photo(cid, IMAGE_URL, caption)
+            else:
+                send_message(cid, caption)
+            time.sleep(1)
+        except Exception as e:
+            print(f"❌ ارسال پیام به {cid} ناموفق بود: {e}") 
+
+if __name__ == "__main__":
+    main()
