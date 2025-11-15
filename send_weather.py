@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# send_weather.py (Final Version: Visual Crossing, 12-Hour Forecast in 4 Intervals)
+# send_weather.py (Final Version: Visual Crossing, 12-Hour Forecast in 4 Intervals, SyntaxError Fix)
 
 import os
 import requests
@@ -23,7 +23,7 @@ if not TELEGRAM_TOKEN or not VISUALCROSSING_KEY or not AQICN_TOKEN:
 
 
 # --- دیکشنری‌های ترجمه ---
-# ⬅️ تغییر: حذف شب/روز از توضیحات وضعیت جوی
+# ⬅️ حذف شب/روز از توضیحات وضعیت جوی
 WEATHER_TRANSLATIONS = {
     "clear-day": "آسمان صاف ☀️", 
     "clear-night": "آسمان صاف ☀️", 
@@ -111,7 +111,7 @@ def format_message(region_name, weather_json, aqi_value):
     aqi = str(aqi_value)
     aqi_text = get_aqi_status(aqi_value)
 
-    # ⬅️ منطق اصلاح شده برای ۱۲ ساعت در ۴ بازه (هر ۳ ساعت یکبار)
+    # ⬅️ منطق پیش‌بینی ۱۲ ساعت در ۴ بازه
     forecast_lines = []
     hours_list = weather_json.get("days", [{}])[0].get("hours", [])
     
@@ -135,12 +135,10 @@ def format_message(region_name, weather_json, aqi_value):
         hour_api_utc = int(h['datetime'].split(':')[0])
         minute_api = int(h['datetime'].split(':')[1])
         
-        # ما به دنبال نزدیک‌ترین ردیف ساعتی به زمان فعلی هستیم که زمان آن از زمان هدف ما عبور کرده باشد
         if hour_api_utc == target_hour_utc and minute_api == 0:
              start_index = i
              break
         
-        # اگر ساعت API از ساعت هدف ما جلوتر بود 
         if hour_api_utc > target_hour_utc:
              start_index = i
              break
@@ -150,7 +148,7 @@ def format_message(region_name, weather_json, aqi_value):
     for i in range(4): # 4 نقطه زمانی
         index_to_check = start_index + (i * 3) # پرش‌های 3 ساعته: 0, 3, 6, 9
         
-        # اگر شاخص از محدوده لیست امروز خارج شد (مثلاً پیش‌بینی برای 00:00 فردا مورد نیاز است)
+        # اگر شاخص از محدوده لیست امروز خارج شد
         if index_to_check >= len(hours_list):
              break 
             
@@ -161,7 +159,6 @@ def format_message(region_name, weather_json, aqi_value):
         hour_api_utc = int(time_api_str.split(':')[0])
         minute_api = int(time_api_str.split(':')[1])
         
-        # ساخت یک datetime شی فرضی و اعمال +3.5 ساعت
         ts_gregorian = datetime.datetime(j_now.year, j_now.month, j_now.day, hour_api_utc, minute_api) + datetime.timedelta(hours=3.5)
         j_ts = jdatetime.datetime.fromgregorian(datetime=ts_gregorian)
         time_str = j_ts.strftime("%H:%M") # زمان به وقت ایران
@@ -171,11 +168,12 @@ def format_message(region_name, weather_json, aqi_value):
         t = round(h.get("temp", 0), 1)
         p = int(h.get("precipprob", 0))
         
-        forecast_lines.append(f"🕒 {time_str} | {w_fa} | 🌡 {t}° | ☔ {p}% احتمال بارش") 
+        # ⬅️ رفع خطای SyntaxError در این خط
+        forecast_lines.append(f"🕒 {time_str} | {w_fa} | 🌡 {t}°C | ☔ {p}% احتمال بارش") 
 
     forecast_text = "\n".join(forecast_lines) 
 
-    # ⬅️ پیام خروجی (عنوان بدون ایموجی)
+    # ⬅️ پیام خروجی (با حذف اعلام ساعت، منبع و ایموجی گوی)
     msg = (
         f"🌦 <b>وضعیت آب‌وهوای امروز</b>\n" 
         f"📍 منطقه: {region_name}\n"
