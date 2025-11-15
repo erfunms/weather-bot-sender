@@ -120,19 +120,22 @@ def format_message(region_name, weather_json, aqi_value):
     
     # پیدا کردن شاخص شروع: اولین ردیف ساعتی که در آینده قرار دارد
     start_index = 0
-    today_utc = now_utc.replace(hour=0, minute=0, second=0, microsecond=0) # شروع روز API
-
+    
     # جستجوی شاخص مربوط به اولین ساعت آینده
     for i, h in enumerate(hours_list):
         # ساخت یک datetime شی برای زمان API (در UTC)
         hour_api_str = h['datetime'].split(':')[0]
         minute_api_str = h['datetime'].split(':')[1]
         
-        # زمان API در UTC (00:00:00, 01:00:00, ...)
-        api_time_utc = today_utc.replace(hour=int(hour_api_str), minute=int(minute_api_str))
+        # فرض می‌کنیم تاریخ API امروز در UTC است.
+        api_time_utc = now_utc.replace(hour=int(hour_api_str), minute=int(minute_api_str), second=0, microsecond=0)
+        
+        # اگر زمان API گذشته باشد، روز را به جلو می‌بریم (برای 00:00 API)
+        if api_time_utc.hour < now_utc.hour:
+            api_time_utc += datetime.timedelta(days=1)
         
         # اولین زمانی که دقیقا از زمان فعلی عبور کرده است
-        if api_time_utc > now_utc:
+        if api_time_utc > now_utc and int(minute_api_str) == 0:
              start_index = i
              break
 
@@ -140,7 +143,7 @@ def format_message(region_name, weather_json, aqi_value):
     for i in range(4): # 4 نقطه زمانی
         index_to_check = start_index + (i * 3) # پرش‌های 3 ساعته: 0, 3, 6, 9
         
-        # اگر شاخص از محدوده لیست امروز خارج شد
+        # اگر شاخص از محدوده لیست امروز خارج شد (که نباید رخ دهد چون API تا 23:00 را پوشش می‌دهد)
         if index_to_check >= len(hours_list):
              break 
             
@@ -151,6 +154,7 @@ def format_message(region_name, weather_json, aqi_value):
         hour_api_utc = int(time_api_str.split(':')[0])
         minute_api = int(time_api_str.split(':')[1])
         
+        # استفاده از تاریخ امروز جلالي براي ساخت شي datetime
         ts_gregorian = datetime.datetime(j_now.year, j_now.month, j_now.day, hour_api_utc, minute_api) + datetime.timedelta(hours=3.5)
         j_ts = jdatetime.datetime.fromgregorian(datetime=ts_gregorian)
         time_str = j_ts.strftime("%H:%M") # زمان به وقت ایران (با دقیقه 30)
@@ -160,7 +164,8 @@ def format_message(region_name, weather_json, aqi_value):
         t = round(h.get("temp", 0), 1)
         p = int(h.get("precipprob", 0))
         
-        # ⬅️ رفع خطای SyntaxError و اصلاح ترتیب نمایش: [Time] | [Weather] | [Temp]°C | [Precip]
+        # ⬅️ رفع خطای SyntaxError و اصلاح ترتیب نمایش نهایی: [Time] | [Weather] | [Temp]°C | [Precip]
+        # حذف فضای اضافی در اطراف °C
         forecast_lines.append(f"🕒 {time_str} | {w_fa} | 🌡 {t}°C | ☔ {p}% احتمال بارش") 
 
     forecast_text = "\n".join(forecast_lines) 
