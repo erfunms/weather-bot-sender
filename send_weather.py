@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# send_weather.py (Updated for Visual Crossing API)
+# send_weather.py (Final Version: Visual Crossing, Clean Output)
 
 import os
 import requests
@@ -9,26 +9,27 @@ import jdatetime
 
 # --- تنظیمات اصلی ---
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-VISUALCROSSING_KEY = os.environ.get("VISUALCROSSING_KEY") # ⬅️ کلید جدید
+VISUALCROSSING_KEY = os.environ.get("VISUALCROSSING_KEY") 
 AQICN_TOKEN = os.environ.get("AQICN_TOKEN") 
 CHAT_IDS = os.environ.get("CHAT_IDS", "")
 REGION_NAME = os.environ.get("REGION_NAME", "پانزده خرداد")
 IMAGE_URL = os.environ.get("IMAGE_URL", "")
-# مختصات جغرافیایی شما (تهران، پانزده خرداد)
 LAT = os.environ.get("LAT", "35.6764")
 LON = os.environ.get("LON", "51.4181")
-UNITS = os.environ.get("UNITS", "metric") # متریک برای سلسیوس
+UNITS = os.environ.get("UNITS", "metric") 
 
 if not TELEGRAM_TOKEN or not VISUALCROSSING_KEY or not AQICN_TOKEN:
     raise SystemExit("⚠️ لطفاً تمام مقادیر لازم (TELEGRAM_TOKEN, VISUALCROSSING_KEY, AQICN_TOKEN) را تنظیم کنید.")
 
 
 # --- دیکشنری‌های ترجمه ---
-# کدهای وضعیت جوی Visual Crossing و ترجمه آن‌ها
+# ⬅️ تغییر: حذف شب/روز از توضیحات وضعیت جوی
 WEATHER_TRANSLATIONS = {
-    "clear-day": "آسمان صاف ☀️", "clear-night": "آسمان صاف (شب) 🌙",
-    "cloudy": "ابری ☁️", "partly-cloudy-day": "نیمه ابری 🌤️",
-    "partly-cloudy-night": "نیمه ابری (شب) 🌥️", 
+    "clear-day": "آسمان صاف ☀️", 
+    "clear-night": "آسمان صاف ☀️", 
+    "cloudy": "ابری ☁️", 
+    "partly-cloudy-day": "نیمه ابری 🌤️",
+    "partly-cloudy-night": "نیمه ابری 🌤️", 
     "rain": "باران 🌧️", "snow": "برف ❄️",
     "wind": "بادی 🌬️", "fog": "مه 🌫️",
     "sleet": "باران و برف 🌨️", "hail": "تگرگ 🧊",
@@ -36,7 +37,7 @@ WEATHER_TRANSLATIONS = {
     "default": "نامشخص ❓"
 }
 
-# ⬅️ مقیاس‌های دقیق AQI بر اساس استاندارد EPA (بدون تغییر)
+# ⬅️ مقیاس‌های دقیق AQI بر اساس استاندارد EPA
 def get_aqi_status(aqi_value):
     if aqi_value is None or aqi_value == "—":
         return "⚪️ نامشخص"
@@ -59,10 +60,8 @@ def get_aqi_status(aqi_value):
         return "🟤 خطرناک — وضعیت اضطراری سلامت."
 
 # --- توابع دریافت داده‌ها ---
-
 def fetch_weather_data(lat, lon):
     """دریافت داده‌های آب و هوا (جاری و پیش‌بینی) از Visual Crossing"""
-    # ⬅️ استفاده از مختصات و متغیر جدید
     url = f"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{lat},{lon}/today"
     params = {
         "unitGroup": UNITS,
@@ -75,7 +74,7 @@ def fetch_weather_data(lat, lon):
     return r.json()
 
 def fetch_air_pollution(lat, lon):
-    """دریافت شاخص کیفیت هوا (AQI) از AQICN (بدون تغییر)"""
+    """دریافت شاخص کیفیت هوا (AQI) از AQICN"""
     url = f"https://api.waqi.info/feed/geo:{lat};{lon}/"
     params = {"token": AQICN_TOKEN}
     r = requests.get(url, params=params, timeout=15)
@@ -93,8 +92,7 @@ def format_message(region_name, weather_json, aqi_value):
     now = datetime.datetime.utcnow() + datetime.timedelta(hours=3.5)
     j_now = jdatetime.datetime.fromgregorian(datetime=now)
     date_fa = j_now.strftime("%Y/%m/%d")
-    time_fa = j_now.strftime("%H:%M")
-
+    
     # ⬅️ استخراج داده‌های فعلی
     current = weather_json.get("currentConditions", {})
     
@@ -102,7 +100,7 @@ def format_message(region_name, weather_json, aqi_value):
     desc_fa = WEATHER_TRANSLATIONS.get(desc, WEATHER_TRANSLATIONS["default"]) 
     temp = round(current.get("temp", 0), 1)
     humidity = current.get("humidity", "—")
-    pop = int(current.get("precipprob", 0)) # احتمال بارش فعلی
+    pop = int(current.get("precipprob", 0)) 
     
     # ⬅️ استخراج داده‌های روزانه برای حداقل و حداکثر دما
     daily_data = weather_json.get("days", [{}])[0]
@@ -113,44 +111,54 @@ def format_message(region_name, weather_json, aqi_value):
     aqi = str(aqi_value)
     aqi_text = get_aqi_status(aqi_value)
 
-    # ⬅️ پیش‌بینی ۱۲ ساعت آینده (۴ ساعت بعدی)
+    # ⬅️ منطق اصلاح شده برای ۴ نقطه زمانی آینده
     forecast_lines = []
-    # ما به دنبال ۴ ساعت آینده (از ساعت فعلی) هستیم. 
-    # V.C تمام ۲۴ ساعت را برمی‌گرداند، پس باید ساعت فعلی را پیدا کنیم.
-    
     hours_list = weather_json.get("days", [{}])[0].get("hours", [])
     
-    # یافتن ساعت فعلی (با توجه به زمان ایران)
-    current_hour = now.hour
-    
-    # پیدا کردن شاخص شروع (نزدیک‌ترین ساعت به ساعت فعلی)
+    # ساعت فعلی UTC (ساعتی که در API استفاده می‌شود)
+    now_utc = datetime.datetime.utcnow() 
+    current_hour_utc = now_utc.hour 
+    current_minute_utc = now_utc.minute
+
+    # پیدا کردن شاخص شروع: اولین ساعت کامل آینده
     start_index = 0
+    
+    # اگر دقیقه فعلی بعد از 30 باشد، اولین نقطه پیش‌بینی باید ساعت بعدی باشد.
+    if current_minute_utc >= 30: 
+        target_hour_utc = (current_hour_utc + 1) % 24 
+    else:
+        # اگر دقیقه کمتر از 30 است، از ساعت فعلی شروع می‌کنیم
+        target_hour_utc = current_hour_utc
+
+    # جستجوی شاخص مربوط به ساعت هدف
     for i, h in enumerate(hours_list):
-        # زمان در API به صورت UTC است، پس باید آن را با زمان ایران مقایسه کنیم
-        hour_utc = int(h['datetime'].split(':')[0])
-        if hour_utc >= now.hour:
+        hour_api_utc = int(h['datetime'].split(':')[0])
+        minute_api = int(h['datetime'].split(':')[1])
+        
+        # ما به دنبال نزدیک‌ترین ردیف ساعتی به زمان فعلی هستیم که زمان آن از زمان هدف ما عبور کرده باشد
+        if hour_api_utc == target_hour_utc and minute_api == 0:
+             start_index = i
+             break
+        
+        # اگر ساعت API از ساعت هدف ما جلوتر بود (مثلاً ساعت هدف 20:00 بوده اما ساعت API به 21:00 رسیده)
+        if hour_api_utc > target_hour_utc:
              start_index = i
              break
 
-    # پیش‌بینی ۴ ساعت آینده از ساعت فعلی
+
+    # پیش‌بینی ۴ نقطه زمانی آینده (۴ ساعت متوالی)
     for h in hours_list[start_index:start_index + 4]:
         
-        # زمان در API به صورت HH:MM:SS است
-        time_str_api = h['datetime']
-        
         # تبدیل زمان API (که UTC است) به زمان ایران (+ 3.5 ساعت) و شمسی
-        # چون Visual Crossing زمان‌ها را به صورت HH:MM:SS برمی‌گرداند، فقط باید ساعت را جلو ببریم
-        hour_utc = int(time_str_api.split(':')[0])
-        # ما فقط نیاز به ساعت داریم، چون UTC است، باید 3.5 ساعت اضافه کنیم
-        # این یک تقریب برای ایران است
-        ts = datetime.datetime.strptime(time_str_api.split(':')[0], "%H")
+        time_api_str = h['datetime']
+        hour_api_utc = int(time_api_str.split(':')[0])
+        minute_api = int(time_api_str.split(':')[1])
         
-        # تبدیل به زمان ایران و شمسی
-        # چون Visual Crossing فقط ساعت را می‌دهد و ما تاریخ را نمی‌دانیم، از تاریخ امروز استفاده می‌کنیم
-        ts_gregorian = datetime.datetime(j_now.year, j_now.month, j_now.day, hour_utc) + datetime.timedelta(hours=3.5)
+        # ساخت یک datetime شی فرضی و اعمال +3.5 ساعت
+        ts_gregorian = datetime.datetime(j_now.year, j_now.month, j_now.day, hour_api_utc, minute_api) + datetime.timedelta(hours=3.5)
         j_ts = jdatetime.datetime.fromgregorian(datetime=ts_gregorian)
-        time_str = j_ts.strftime("%H:%M")
-        
+        time_str = j_ts.strftime("%H:%M") # زمان به وقت ایران
+
         w = h.get("icon", "default")
         w_fa = WEATHER_TRANSLATIONS.get(w, WEATHER_TRANSLATIONS["default"])
         t = round(h.get("temp", 0), 1)
@@ -160,9 +168,9 @@ def format_message(region_name, weather_json, aqi_value):
 
     forecast_text = "\n".join(forecast_lines) 
 
-    # پیام خروجی
+    # ⬅️ پیام خروجی (با حذف اعلام ساعت و منبع)
     msg = (
-        f"🌦 <b>وضعیت آب‌وهوای امروز</b> (منبع: Visual Crossing)\n"
+        f"🌦 <b>وضعیت آب‌وهوای امروز</b>\n" 
         f"📍 منطقه: {region_name}\n"
         f"📅 تاریخ: {date_fa}\n"
         f"وضعیت جوی: {desc_fa}\n"
@@ -172,7 +180,7 @@ def format_message(region_name, weather_json, aqi_value):
         f"حداقل دما: {temp_min}°C\n"
         f"حداکثر دما: {temp_max}°C\n"
         f"شاخص کیفیت هوا ({aqi}): {aqi_text}\n\n"
-        f"<b>🔮 پیش‌بینی ۴ ساعت آینده:</b>\n{forecast_text}"
+        f"<b>🔮 پیش‌بینی ۴ ساعت آینده:</b>\n{forecast_text}" 
     )
 
     return msg
@@ -180,38 +188,25 @@ def format_message(region_name, weather_json, aqi_value):
 # --- توابع ارسال پیام (بدون تغییر) ---
 def send_photo(chat_id, photo_url, caption_html):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
-    
-    data = {
-        "chat_id": chat_id, 
-        "caption": caption_html, 
-        "parse_mode": "HTML", 
-        "photo": photo_url,
-    }
+    data = {"chat_id": chat_id, "caption": caption_html, "parse_mode": "HTML", "photo": photo_url}
     r = requests.post(url, data=data, timeout=20)
     r.raise_for_status()
     return r.json()
 
 def send_message(chat_id, text_html):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    
-    data = {
-        "chat_id": chat_id, 
-        "text": text_html, 
-        "parse_mode": "HTML",
-    }
+    data = {"chat_id": chat_id, "text": text_html, "parse_mode": "HTML"}
     r = requests.post(url, data=data, timeout=20)
     r.raise_for_status()
     return r.json()
 
-# --- اجرای اصلی ---
+# --- اجرای اصلی (بدون تغییر) ---
 def main():
     latf, lonf = float(LAT), float(LON)
     
-    # ⬅️ فراخوانی تابع جدید
     weather_data = fetch_weather_data(latf, lonf)
     aqi_value = fetch_air_pollution(latf, lonf) 
     
-    # ⬅️ فراخوانی تابع قالب‌بندی جدید
     caption = format_message(REGION_NAME, weather_data, aqi_value)
 
     chat_ids = [c.strip() for c in CHAT_IDS.split(",") if c.strip()]
