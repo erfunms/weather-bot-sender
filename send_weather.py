@@ -165,7 +165,6 @@ def format_message(region_name, weather_json, aqi_value):
         f"🌦 <b>وضعیت آب‌وهوای امروز</b> (منبع: Visual Crossing)\n"
         f"📍 منطقه: {region_name}\n"
         f"📅 تاریخ: {date_fa}\n"
-        f"⏰ ساعت: {time_fa}\n\n"
         f"وضعیت جوی: {desc_fa}\n"
         f"دمای فعلی: {temp}°C\n"
         f"رطوبت: {humidity}%\n"
