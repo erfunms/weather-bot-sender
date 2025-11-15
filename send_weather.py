@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# send_weather.py (Final Version: Visual Crossing, 12-Hour Forecast in 4 Intervals, SyntaxError Fix)
+# send_weather.py (Final Version: All fixes applied - Robust Time Logic, Clean Format)
 
 import os
 import requests
@@ -115,34 +115,26 @@ def format_message(region_name, weather_json, aqi_value):
     forecast_lines = []
     hours_list = weather_json.get("days", [{}])[0].get("hours", [])
     
-    # ساعت فعلی UTC 
+    # ساعت فعلی UTC (برای مقایسه با API)
     now_utc = datetime.datetime.utcnow() 
-    current_hour_utc = now_utc.hour 
-    current_minute_utc = now_utc.minute
-
-    # پیدا کردن شاخص شروع: اولین ساعت کامل آینده
-    start_index = 0
     
-    # اگر دقیقه فعلی بعد از 30 باشد، اولین نقطه پیش‌بینی باید ساعت بعدی باشد.
-    if current_minute_utc >= 30: 
-        target_hour_utc = (current_hour_utc + 1) % 24 
-    else:
-        # اگر دقیقه کمتر از 30 است، از ساعت فعلی شروع می‌کنیم
-        target_hour_utc = current_hour_utc
+    # پیدا کردن شاخص شروع: اولین ردیف ساعتی که در آینده قرار دارد
+    start_index = 0
+    today_utc = now_utc.replace(hour=0, minute=0, second=0, microsecond=0) # شروع روز API
 
-    # جستجوی شاخص مربوط به ساعت هدف
+    # جستجوی شاخص مربوط به اولین ساعت آینده
     for i, h in enumerate(hours_list):
-        hour_api_utc = int(h['datetime'].split(':')[0])
-        minute_api = int(h['datetime'].split(':')[1])
+        # ساخت یک datetime شی برای زمان API (در UTC)
+        hour_api_str = h['datetime'].split(':')[0]
+        minute_api_str = h['datetime'].split(':')[1]
         
-        if hour_api_utc == target_hour_utc and minute_api == 0:
+        # زمان API در UTC (00:00:00, 01:00:00, ...)
+        api_time_utc = today_utc.replace(hour=int(hour_api_str), minute=int(minute_api_str))
+        
+        # اولین زمانی که دقیقا از زمان فعلی عبور کرده است
+        if api_time_utc > now_utc:
              start_index = i
              break
-        
-        if hour_api_utc > target_hour_utc:
-             start_index = i
-             break
-
 
     # پیش‌بینی ۱۲ ساعت آینده در ۴ بازه (هر ۳ ساعت یکبار)
     for i in range(4): # 4 نقطه زمانی
@@ -154,79 +146,18 @@ def format_message(region_name, weather_json, aqi_value):
             
         h = hours_list[index_to_check]
         
-        # تبدیل زمان API (که UTC است) به زمان ایران (+ 3.5 ساعت) و شمسی
+        # تبدیل زمان API (UTC) به زمان ایران (+ 3.5 ساعت) و شمسی
         time_api_str = h['datetime']
         hour_api_utc = int(time_api_str.split(':')[0])
         minute_api = int(time_api_str.split(':')[1])
         
         ts_gregorian = datetime.datetime(j_now.year, j_now.month, j_now.day, hour_api_utc, minute_api) + datetime.timedelta(hours=3.5)
         j_ts = jdatetime.datetime.fromgregorian(datetime=ts_gregorian)
-        time_str = j_ts.strftime("%H:%M") # زمان به وقت ایران
+        time_str = j_ts.strftime("%H:%M") # زمان به وقت ایران (با دقیقه 30)
 
         w = h.get("icon", "default")
         w_fa = WEATHER_TRANSLATIONS.get(w, WEATHER_TRANSLATIONS["default"])
         t = round(h.get("temp", 0), 1)
         p = int(h.get("precipprob", 0))
         
-        # ⬅️ رفع خطای SyntaxError در این خط
-        forecast_lines.append(f"🕒 {time_str} | {w_fa} | 🌡 {t}°C | ☔ {p}% احتمال بارش") 
-
-    forecast_text = "\n".join(forecast_lines) 
-
-    # ⬅️ پیام خروجی (با حذف اعلام ساعت، منبع و ایموجی گوی)
-    msg = (
-        f"🌦 <b>وضعیت آب‌وهوای امروز</b>\n" 
-        f"📍 منطقه: {region_name}\n"
-        f"📅 تاریخ: {date_fa}\n"
-        f"وضعیت جوی: {desc_fa}\n"
-        f"دمای فعلی: {temp}°C\n"
-        f"رطوبت: {humidity}%\n"
-        f"احتمال بارش: {pop}%\n"
-        f"حداقل دما: {temp_min}°C\n"
-        f"حداکثر دما: {temp_max}°C\n"
-        f"شاخص کیفیت هوا ({aqi}): {aqi_text}\n\n"
-        f"<b>پیش‌بینی ۱۲ ساعت آینده:</b>\n{forecast_text}" 
-    )
-
-    return msg
-
-# --- توابع ارسال پیام (بدون تغییر) ---
-def send_photo(chat_id, photo_url, caption_html):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
-    data = {"chat_id": chat_id, "caption": caption_html, "parse_mode": "HTML", "photo": photo_url}
-    r = requests.post(url, data=data, timeout=20)
-    r.raise_for_status()
-    return r.json()
-
-def send_message(chat_id, text_html):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    data = {"chat_id": chat_id, "text": text_html, "parse_mode": "HTML"}
-    r = requests.post(url, data=data, timeout=20)
-    r.raise_for_status()
-    return r.json()
-
-# --- اجرای اصلی (بدون تغییر) ---
-def main():
-    latf, lonf = float(LAT), float(LON)
-    
-    weather_data = fetch_weather_data(latf, lonf)
-    aqi_value = fetch_air_pollution(latf, lonf) 
-    
-    caption = format_message(REGION_NAME, weather_data, aqi_value)
-
-    chat_ids = [c.strip() for c in CHAT_IDS.split(",") if c.strip()]
-    if not chat_ids:
-        raise SystemExit("⚠️ لطفاً CHAT_IDS را تنظیم کنید.")
-
-    for cid in chat_ids:
-        try:
-            if IMAGE_URL:
-                send_photo(cid, IMAGE_URL, caption)
-            else:
-                send_message(cid, caption)
-            time.sleep(1)
-        except Exception as e:
-            print(f"❌ ارسال پیام به {cid} ناموفق بود: {e}") 
-
-if __name__ == "__main__":
-    main()
+        # ⬅️ رفع خطای SyntaxError و اصلاح ترتیب نمایش
