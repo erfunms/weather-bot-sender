@@ -20,26 +20,28 @@ jobs:
 
       - name: 📦 Install dependencies (FINAL FIX)
         run: |
-          # استفاده از python3 -m pip برای حل قطعی مشکل ModuleNotFoundError
           python3 -m pip install --upgrade pip
-          python3 -m pip install requests jdatetime # ⬅️ حل کننده مشکل jdatetime
+          python3 -m pip install requests jdatetime
           echo "✅ jdatetime installed successfully."
           
       - name: 📅 Run weather sender script
         env:
           # --- Secrets اصلی ---
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          OPENWEATHER_KEY: ${{ secrets.OPENWEATHER_KEY }}
+          
+          # 🚨 خط اصلاح‌شده: فراخوانی کلید جدید Visual Crossing
+          VISUALCROSSING_KEY: ${{ secrets.VISUALCROSSING_KEY }} 
+          
           CHAT_IDS: ${{ secrets.CHAT_IDS }}
           REGION_NAME: ${{ secrets.REGION_NAME }}
           IMAGE_URL: ${{ secrets.IMAGE_URL }}
           
-          # ⬅️ افزودن Secret جدید برای AQICN (جهت دقت بالاتر AQI)
+          # ⬅️ اطمینان از AQICN
           AQICN_TOKEN: ${{ secrets.AQICN_TOKEN }}
           
         run: |
           echo "🚀 Starting Weather Bot at $(date -u)"
-          python3 send_weather.py || { # ⬅️ استفاده از python3 برای اجرای اسکریپت
+          python3 send_weather.py || {
             echo "❌ Error: Script failed!"
             exit 1
           }
