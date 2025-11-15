@@ -2,8 +2,8 @@ name: Weather Auto Sender ☀️
 
 on:
   schedule:
-    - cron: '30 3 * * *'      # ⬅️ 7:00 صبح ایران = 3:30 بامداد UTC
-    - cron: '30 18 * * *'     # ⬅️ 10:00 شب ایران = 18:30 عصر UTC
+    - cron: '30 21 * * *'
+    - cron: '30 4 * * *'
   workflow_dispatch: {}
 
 jobs:
