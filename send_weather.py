@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# send_weather.py (Ultimate Final Version: All Fixes Applied)
+# send_weather.py (Ultimate Final Version: Directional Overrides for Garbled Text)
 
 import os
 import requests
@@ -63,7 +63,7 @@ def fetch_weather_data(lat, lon):
 
 def fetch_air_pollution(lat, lon):
     """دریافت شاخص کیفیت هوا (AQI) از AQICN"""
-    # ⬅️ جستجوی عمومی شهر تهران
+    # ⬅️ جستجوی عمومی شهر تهران برای دقت بالاتر AQI
     url = "https://api.waqi.info/feed/tehran/" 
     
     params = {"token": AQICN_TOKEN}
@@ -89,6 +89,7 @@ def format_message(region_name, weather_json, aqi_value):
     temp_current = round(current.get("temp", 0), 1) 
     humidity = current.get("humidity", "—")
     pop = int(current.get("precipprob", 0)) 
+    
     
     # ----------------------------------------------------
     # منطق محاسبه حداقل و حداکثر دما برای ۲۴ ساعت آینده (پویا)
@@ -126,8 +127,15 @@ def format_message(region_name, weather_json, aqi_value):
              start_index = i
              break
         
-    # ⚠️ استفاده از فضاهای ثابت برای تراز بندی در Code Block
-    
+    # ⚠️ تعریف کاراکترهای یونیکد برای اجبار جهت نمایش LTR (چپ به راست)
+    # LRE: Left-to-Right Embedding (U+202A)
+    # PDF: Pop Directional Formatting (U+202C)
+    # ZWNJ: Zero Width Non-Joiner (U+200C) برای تفکیک دقیق
+    LRE = "\u202A" 
+    PDF = "\u202C" 
+    ZWNJ = "\u200c"
+    SEPARATOR = " | "
+
     for i in range(4): # 4 نقطه زمانی
         index_to_check = start_index + (i * 3)
         
@@ -146,18 +154,25 @@ def format_message(region_name, weather_json, aqi_value):
         t = round(h.get("temp", 0), 1)
         p = int(h.get("precipprob", 0))
         
-        # ⬅️ قالب‌بندی نهایی و مقاوم شده (استفاده از فاصله و | ساده)
-        # خروجی نهایی: 🕒 HH:MM | وضعیت جوی | 🌡 T°C | ☔ P% احتمال بارش 
-        # از آنجایی که در تگ <pre> قرار می‌گیرد، این ساختار تراز می‌ماند و جابه‌جا نمی‌شود.
+        # ⬅️ قالب‌بندی نهایی و مقاوم شده: از LRE/PDF فقط برای دما و بارش استفاده می‌کنیم.
         
-        # ⚠️ اطمینان از قرار گرفتن °C و % در کنار عدد
-        forecast_line = (
-            f"🕒 {time_str:<5} | {w_fa:<10} | 🌡 {t}°C | ☔ {p}% احتمال بارش"
+        # 1. زمان و وضعیت جوی (RTL)
+        time_weather = f"🕒 {time_str}{SEPARATOR}{w_fa}"
+        
+        # 2. دما (LTR اجباری)
+        # از LRE/PDF برای ایزوله کردن عدد و واحد استفاده می‌شود.
+        temp_section = f"🌡{LRE} {t}°C{PDF}"
+        
+        # 3. بارش (LTR/RTL ترکیب شده)
+        # از LRE/PDF برای ایزوله کردن درصد استفاده می‌شود.
+        rain_section = f"☔{LRE} {p}%{PDF} {ZWNJ}احتمال بارش" 
+        
+        # ترکیب بخش‌ها (RTL)
+        forecast_lines.append(
+            f"{time_weather}{SEPARATOR}{temp_section}{SEPARATOR}{rain_section}"
         )
-        forecast_lines.append(forecast_line) 
 
-    # ⬅️ محصور کردن پیش‌بینی در تگ <pre> برای اجبار به نمایش LTR و فونت Monospace
-    forecast_text = "<pre>\n" + "\n".join(forecast_lines) + "\n</pre>" 
+    forecast_text = "\n".join(forecast_lines) 
 
     # ⬅️ پیام خروجی نهایی
     msg = (
