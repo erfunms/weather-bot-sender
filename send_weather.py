@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# send_weather.py (Ultimate Final Version: Park Shahr AQI, RLO/ZWNJ Formatting)
+# send_weather.py (Ultimate Final Version: Stable AQI, Code Block for Guaranteed LTR)
 
 import os
 import requests
@@ -8,14 +8,12 @@ import time
 import jdatetime
 
 # --- تنظیمات اصلی ---
-# این مقادیر از Secretها یا مقادیر پیش‌فرض استفاده می‌کنند
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 VISUALCROSSING_KEY = os.environ.get("VISUALCROSSING_KEY") 
 AQICN_TOKEN = os.environ.get("AQICN_TOKEN") 
 CHAT_IDS = os.environ.get("CHAT_IDS", "")
 REGION_NAME = os.environ.get("REGION_NAME", "پانزده خرداد")
 IMAGE_URL = os.environ.get("IMAGE_URL", "")
-# LAT و LON اکنون از محیط (GitHub Secrets) خوانده می‌شوند.
 LAT = os.environ.get("LAT", "35.6764")
 LON = os.environ.get("LON", "51.4181")
 UNITS = os.environ.get("UNITS", "metric") 
@@ -42,7 +40,6 @@ def get_aqi_status(aqi_value):
     except ValueError:
         return "⚪️ نامشخص"
         
-    # مقیاس‌های AQI
     if aqi <= 50: return "🟢 پاک — کیفیت هوا رضایت‌بخش است."
     elif aqi <= 100: return "🟡 قابل قبول — احتیاط برای افراد حساس."
     elif aqi <= 150: return "🟠 ناسالم برای گروه‌های حساس — فعالیت‌های طولانی‌مدت را محدود کنید."
@@ -65,9 +62,9 @@ def fetch_weather_data(lat, lon):
     return r.json()
 
 def fetch_air_pollution(lat, lon):
-    """دریافت شاخص کیفیت هوا (AQI) از AQICN برای ایستگاه پارک شهر"""
-    # ⬅️ جستجوی مستقیم ایستگاه پارک شهر برای دقت حداکثری
-    url = "https://api.waqi.info/feed/tehran/park-shahr/" 
+    """دریافت شاخص کیفیت هوا (AQI) از AQICN (بازگشت به جستجوی عمومی تهران)"""
+    # ⬅️ بازگشت به جستجوی عمومی تهران برای جلوگیری از خطای "منحل شدن" ایستگاه خاص
+    url = "https://api.waqi.info/feed/tehran/" 
     
     params = {"token": AQICN_TOKEN}
     r = requests.get(url, params=params, timeout=15)
@@ -130,11 +127,8 @@ def format_message(region_name, weather_json, aqi_value):
              start_index = i
              break
         
-    # ⚠️ تعریف کاراکترهای یونیکد برای اجبار جهت نمایش و تفکیک (RLO و ZWNJ)
-    RLO = "\u202E" # Right-to-Left Override - قوی‌ترین دستور
-    ZWNJ = "\u200c" # Zero Width Non-Joiner - جداکننده قوی
-    SEPARATOR = " | "
-
+    # ⚠️ استفاده از فضاهای ثابت برای تراز بندی در Code Block
+    
     for i in range(4): # 4 نقطه زمانی
         index_to_check = start_index + (i * 3)
         
@@ -153,23 +147,18 @@ def format_message(region_name, weather_json, aqi_value):
         t = round(h.get("temp", 0), 1)
         p = int(h.get("precipprob", 0))
         
-        # ⬅️ قالب‌بندی نهایی و مقاوم شده: استفاده از RLO و ZWNJ برای رفع مشکل نگارشی
+        # ⬅️ قالب‌بندی نهایی: استفاده از فضای ثابت و | ساده (LTR تضمین شده توسط <pre>)
         
-        # 1. بخش زمان
-        time_section = f"🕒 {time_str}"
-        # 2. بخش وضعیت جوی
-        weather_section = w_fa
-        # 3. بخش دما (T°C)
-        temp_section = f"🌡{t}{ZWNJ}°C"
-        # 4. بخش بارش (P%)
-        rain_section = f"☔{p}%{ZWNJ} احتمال بارش"
+        # ساختار: 🕒 HH:MM | وضعیت جوی | 🌡 T°C | ☔ P% احتمال بارش 
+        # استفاده از f-string و فاصله گذاری برای تراز (فقط در <pre> کار می کند)
         
-        # ترکیب بخش‌ها: استفاده از RLO برای مجبور کردن کل خط به جهت‌گیری صحیح
-        forecast_lines.append(
-            f"{RLO}{time_section}{SEPARATOR}{weather_section}{SEPARATOR}{temp_section}{SEPARATOR}{rain_section}"
+        forecast_line = (
+            f"🕒 {time_str:<5} | {w_fa:<10} | 🌡 {t}°C | ☔ {p}% احتمال بارش"
         )
+        forecast_lines.append(forecast_line) 
 
-    forecast_text = "\n".join(forecast_lines) 
+    # ⬅️ محصور کردن پیش‌بینی در تگ <pre> برای اجبار به نمایش LTR و فونت Monospace
+    forecast_text = "<pre>\n" + "\n".join(forecast_lines) + "\n</pre>" 
 
     # ⬅️ پیام خروجی نهایی
     msg = (
@@ -206,12 +195,10 @@ def send_message(chat_id, text_html):
 
 # --- اجرای اصلی (بدون تغییر) ---
 def main():
-    # خواندن LAT/LON از محیط
     latf = float(LAT)
     lonf = float(LON)
     
     weather_data = fetch_weather_data(latf, lonf)
-    # از مختصات برای AQI استفاده نمی‌کنیم چون مستقیماً ایستگاه پارک شهر را هدف قرار داده‌ایم.
     aqi_value = fetch_air_pollution(latf, lonf) 
     
     caption = format_message(REGION_NAME, weather_data, aqi_value)
