@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# send_weather.py (Ultimate Final Version: Fixed All Known Issues)
+# send_weather.py (Ultimate Final Version: All Fixes Applied)
 
 import os
 import requests
@@ -23,21 +23,15 @@ if not TELEGRAM_TOKEN or not VISUALCROSSING_KEY or not AQICN_TOKEN:
 
 
 # --- دیکشنری‌های ترجمه ---
-# ⬅️ حذف شب/روز از توضیحات وضعیت جوی
 WEATHER_TRANSLATIONS = {
-    "clear-day": "آسمان صاف ☀️", 
-    "clear-night": "آسمان صاف ☀️", 
-    "cloudy": "ابری ☁️", 
-    "partly-cloudy-day": "نیمه ابری 🌤️",
-    "partly-cloudy-night": "نیمه ابری 🌤️", 
-    "rain": "باران 🌧️", "snow": "برف ❄️",
-    "wind": "بادی 🌬️", "fog": "مه 🌫️",
+    "clear-day": "آسمان صاف ☀️", "clear-night": "آسمان صاف ☀️", 
+    "cloudy": "ابری ☁️", "partly-cloudy-day": "نیمه ابری 🌤️",
+    "partly-cloudy-night": "نیمه ابری 🌤️", "rain": "باران 🌧️", 
+    "snow": "برف ❄️", "wind": "بادی 🌬️", "fog": "مه 🌫️",
     "sleet": "باران و برف 🌨️", "hail": "تگرگ 🧊",
-    "thunderstorm": "تندرباد/رعد و برق ⛈️",
-    "default": "نامشخص ❓"
+    "thunderstorm": "تندرباد/رعد و برق ⛈️", "default": "نامشخص ❓"
 }
 
-# ⬅️ مقیاس‌های دقیق AQI بر اساس استاندارد EPA
 def get_aqi_status(aqi_value):
     if aqi_value is None or aqi_value == "—":
         return "⚪️ نامشخص"
@@ -46,18 +40,12 @@ def get_aqi_status(aqi_value):
     except ValueError:
         return "⚪️ نامشخص"
         
-    if aqi <= 50:
-        return "🟢 پاک — کیفیت هوا رضایت‌بخش است."
-    elif aqi <= 100:
-        return "🟡 قابل قبول — احتیاط برای افراد حساس."
-    elif aqi <= 150:
-        return "🟠 ناسالم برای گروه‌های حساس — فعالیت‌های طولانی‌مدت را محدود کنید."
-    elif aqi <= 200:
-        return "🔴 ناسالم — همه ممکن است اثرات بهداشتی را تجربه کنند."
-    elif aqi <= 300:
-        return "🟣 بسیار ناسالم — هشدار سلامت: خطرناک برای عموم."
-    else:
-        return "🟤 خطرناک — وضعیت اضطراری سلامت."
+    if aqi <= 50: return "🟢 پاک — کیفیت هوا رضایت‌بخش است."
+    elif aqi <= 100: return "🟡 قابل قبول — احتیاط برای افراد حساس."
+    elif aqi <= 150: return "🟠 ناسالم برای گروه‌های حساس — فعالیت‌های طولانی‌مدت را محدود کنید."
+    elif aqi <= 200: return "🔴 ناسالم — همه ممکن است اثرات بهداشتی را تجربه کنند."
+    elif aqi <= 300: return "🟣 بسیار ناسالم — هشدار سلامت: خطرناک برای عموم."
+    else: return "🟤 خطرناک — وضعیت اضطراری سلامت."
 
 # --- توابع دریافت داده‌ها ---
 def fetch_weather_data(lat, lon):
@@ -75,8 +63,7 @@ def fetch_weather_data(lat, lon):
 
 def fetch_air_pollution(lat, lon):
     """دریافت شاخص کیفیت هوا (AQI) از AQICN"""
-    # ⬅️ استفاده از جستجوی عمومی شهر تهران برای دقت بالاتر AQI
-    # اگر در شهر دیگری هستید، 'tehran/' را با نام شهر انگلیسی خود جایگزین کنید 
+    # ⬅️ جستجوی عمومی شهر تهران
     url = "https://api.waqi.info/feed/tehran/" 
     
     params = {"token": AQICN_TOKEN}
@@ -96,32 +83,26 @@ def format_message(region_name, weather_json, aqi_value):
     j_now = jdatetime.datetime.fromgregorian(datetime=now_gregorian_iran)
     date_fa = j_now.strftime("%Y/%m/%d")
     
-    # ⬅️ استخراج داده‌های فعلی
     current = weather_json.get("currentConditions", {})
-    
     desc = current.get("icon", "default")
     desc_fa = WEATHER_TRANSLATIONS.get(desc, WEATHER_TRANSLATIONS["default"]) 
     temp_current = round(current.get("temp", 0), 1) 
     humidity = current.get("humidity", "—")
     pop = int(current.get("precipprob", 0)) 
     
-    
     # ----------------------------------------------------
     # منطق محاسبه حداقل و حداکثر دما برای ۲۴ ساعت آینده (پویا)
     # ----------------------------------------------------
     hours_list = []
-    
     for day in weather_json.get("days", []):
         hours_list.extend(day.get("hours", []))
 
     start_time_utc = datetime.datetime.utcnow()
     end_time_utc = start_time_utc + datetime.timedelta(hours=24)
-    
     temps_in_24h = []
     
     for h in hours_list:
         full_hour_utc = datetime.datetime.utcfromtimestamp(h.get('datetimeEpoch'))
-
         if start_time_utc <= full_hour_utc <= end_time_utc:
             temps_in_24h.append(h.get("temp"))
 
@@ -132,7 +113,6 @@ def format_message(region_name, weather_json, aqi_value):
         temp_min_24h = temp_max_24h = "—" 
     # ----------------------------------------------------
     
-    # شاخص کیفیت هوا (AQI)
     aqi = str(aqi_value)
     aqi_text = get_aqi_status(aqi_value)
 
@@ -142,27 +122,20 @@ def format_message(region_name, weather_json, aqi_value):
     
     for i, h in enumerate(hours_list):
         full_hour_utc = datetime.datetime.utcfromtimestamp(h.get('datetimeEpoch'))
-        
         if start_time_utc < full_hour_utc:
              start_index = i
              break
         
-    # پیش‌بینی ۱۲ ساعت آینده در ۴ بازه (هر ۳ ساعت یکبار)
+    # ⚠️ استفاده از فضاهای ثابت برای تراز بندی در Code Block
     
-    # ⚠️ تعریف کاراکترهای یونیکد برای اجبار به نمایش LTR و جداکننده مقاوم
-    LRE = "\u202A" # Left-to-Right Embedding
-    PDF = "\u202C" # Pop Directional Formatting
-    SEPARATOR = "\u200b | \u200b" # جداکننده نامرئی با خط عمودی
-
     for i in range(4): # 4 نقطه زمانی
-        index_to_check = start_index + (i * 3) # پرش‌های 3 ساعته: 0, 3, 6, 9
+        index_to_check = start_index + (i * 3)
         
         if index_to_check >= len(hours_list):
              break 
             
         h = hours_list[index_to_check]
         
-        # تبدیل زمان API (UTC) به زمان ایران (+ 3.5 ساعت) و شمسی
         full_hour_utc = datetime.datetime.utcfromtimestamp(h.get('datetimeEpoch'))
         ts_gregorian = full_hour_utc + datetime.timedelta(hours=3.5)
         j_ts = jdatetime.datetime.fromgregorian(datetime=ts_gregorian)
@@ -173,20 +146,20 @@ def format_message(region_name, weather_json, aqi_value):
         t = round(h.get("temp", 0), 1)
         p = int(h.get("precipprob", 0))
         
-        # ⬅️ قالب‌بندی نهایی و مقاوم شده با LRE و PDF برای رفع مشکل نگارشی
+        # ⬅️ قالب‌بندی نهایی و مقاوم شده (استفاده از فاصله و | ساده)
+        # خروجی نهایی: 🕒 HH:MM | وضعیت جوی | 🌡 T°C | ☔ P% احتمال بارش 
+        # از آنجایی که در تگ <pre> قرار می‌گیرد، این ساختار تراز می‌ماند و جابه‌جا نمی‌شود.
         
-        time_section = f"🕒 {time_str}"
-        weather_section = w_fa
-        # تضمین نمایش صحیح دما و °C
-        temp_section = f"{LRE}🌡 {t}°C{PDF}" 
-        # تضمین نمایش صحیح احتمال بارش و %
-        rain_section = f"{LRE}☔ {p}% احتمال بارش{PDF}" 
-        
-        forecast_lines.append(f"{time_section}{SEPARATOR}{weather_section}{SEPARATOR}{temp_section}{SEPARATOR}{rain_section}") 
+        # ⚠️ اطمینان از قرار گرفتن °C و % در کنار عدد
+        forecast_line = (
+            f"🕒 {time_str:<5} | {w_fa:<10} | 🌡 {t}°C | ☔ {p}% احتمال بارش"
+        )
+        forecast_lines.append(forecast_line) 
 
-    forecast_text = "\n".join(forecast_lines) 
+    # ⬅️ محصور کردن پیش‌بینی در تگ <pre> برای اجبار به نمایش LTR و فونت Monospace
+    forecast_text = "<pre>\n" + "\n".join(forecast_lines) + "\n</pre>" 
 
-    # ⬅️ پیام خروجی (با استفاده از دمای محاسبه‌شده ۲۴ ساعته و نام فیلدهای اصلی)
+    # ⬅️ پیام خروجی نهایی
     msg = (
         f"🌦 <b>وضعیت آب‌وهوای امروز</b>\n" 
         f"📍 منطقه: {region_name}\n"
@@ -198,7 +171,8 @@ def format_message(region_name, weather_json, aqi_value):
         f"حداقل دما: {temp_min_24h}°C\n"
         f"حداکثر دما: {temp_max_24h}°C\n"
         f"شاخص کیفیت هوا ({aqi}): {aqi_text}\n\n"
-        f"<b>پیش‌بینی ۱۲ ساعت آینده:</b>\n{forecast_text}" 
+        f"<b>پیش‌بینی ۱۲ ساعت آینده:</b>\n"
+        f"{forecast_text}" 
     )
 
     return msg
