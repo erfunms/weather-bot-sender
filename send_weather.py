@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# send_weather.py (Final Strategy: Vertical Layout & Official AQI Mirror)
+# send_weather.py (Final: Original Layout + Fixed Text Direction + Stable AQI)
 
 import os
 import requests
@@ -21,7 +21,6 @@ UNITS = os.environ.get("UNITS", "metric")
 if not TELEGRAM_TOKEN or not VISUALCROSSING_KEY or not AQICN_TOKEN:
     raise SystemExit("⚠️ لطفاً تمام مقادیر لازم را تنظیم کنید.")
 
-
 # --- دیکشنری‌های ترجمه ---
 WEATHER_TRANSLATIONS = {
     "clear-day": "آسمان صاف ☀️", "clear-night": "آسمان صاف 🌙", 
@@ -40,7 +39,7 @@ def get_aqi_status(aqi_value):
         
     if aqi <= 50: return "🟢 پاک"
     elif aqi <= 100: return "🟡 قابل قبول"
-    elif aqi <= 150: return "🟠 ناسالم (گروه‌های حساس)"
+    elif aqi <= 150: return "🟠 ناسالم (حساس)"
     elif aqi <= 200: return "🔴 ناسالم (همه)"
     elif aqi <= 300: return "🟣 بسیار ناسالم"
     else: return "🟤 خطرناک"
@@ -60,8 +59,8 @@ def fetch_weather_data(lat, lon):
     return r.json()
 
 def fetch_air_pollution(lat, lon):
-    """دریافت AQI از AQICN (میانگین کل تهران)"""
-    # استفاده از feed/tehran/ که معمولاً با سایت کنترل کیفیت هماهنگ است
+    """دریافت AQI از AQICN (عمومی تهران برای پایداری)"""
+    # استفاده از لینک عمومی تهران برای جلوگیری از قطع شدن داده
     url = "https://api.waqi.info/feed/tehran/" 
     params = {"token": AQICN_TOKEN}
     try:
@@ -77,7 +76,6 @@ def fetch_air_pollution(lat, lon):
 
 # --- قالب پیام نهایی ---
 def format_message(region_name, weather_json, aqi_value):
-    # زمان فعلی به وقت ایران
     now_gregorian_iran = datetime.datetime.utcnow() + datetime.timedelta(hours=3.5)
     j_now = jdatetime.datetime.fromgregorian(datetime=now_gregorian_iran)
     date_fa = j_now.strftime("%Y/%m/%d")
@@ -89,7 +87,7 @@ def format_message(region_name, weather_json, aqi_value):
     humidity = current.get("humidity", "—")
     pop = int(current.get("precipprob", 0)) 
     
-    # --- محاسبه حداقل/حداکثر دما (۲۴ ساعت آینده) ---
+    # محاسبه حداقل/حداکثر ۲۴ ساعته
     hours_list = []
     for day in weather_json.get("days", []):
         hours_list.extend(day.get("hours", []))
@@ -112,7 +110,7 @@ def format_message(region_name, weather_json, aqi_value):
     aqi = str(aqi_value)
     aqi_text = get_aqi_status(aqi_value)
 
-    # --- ساخت بخش پیش‌بینی (طراحی دو خطی برای رفع مشکل نگارشی) ---
+    # --- پیش‌بینی ۱۲ ساعته (طراحی تک‌خطی اصلاح شده) ---
     forecast_lines = []
     start_index = 0
     
@@ -122,6 +120,10 @@ def format_message(region_name, weather_json, aqi_value):
              start_index = i
              break
         
+    # کاراکترهای نامرئی برای ایزوله کردن جهت متن (معجزه رفع باگ)
+    LRE = "\u202A" # شروع متن چپ-به-راست (برای اعداد)
+    PDF = "\u202C" # پایان ایزوله
+
     for i in range(4): 
         index_to_check = start_index + (i * 3)
         if index_to_check >= len(hours_list): break 
@@ -136,26 +138,26 @@ def format_message(region_name, weather_json, aqi_value):
         t = round(h.get("temp", 0), 1)
         p = int(h.get("precipprob", 0))
         
-        # ✅ تغییر استراتژی: نمایش در دو خط برای جلوگیری از تداخل فارسی/انگلیسی
-        # خط اول: ساعت و وضعیت جوی
-        # خط دوم: دما و بارش (کاملاً جدا از متن فارسی)
-        line = (
-            f"🕒 <b>{time_str}</b>  {w_fa}\n"
-            f"   🌡 {t}°C    ☔ {p}% بارش\n"
-        )
+        # ✅ ساختار تک‌خطی اصلی، اما با اعداد ایزوله شده
+        # اعداد داخل LRE و PDF قرار می‌گیرند تا با متن فارسی قاطی نشوند
+        line = f"🕒 {time_str} | {w_fa} | 🌡 {LRE}{t}°C{PDF} | ☔ {LRE}{p}%{PDF} بارش"
         forecast_lines.append(line)
 
-    forecast_text = "".join(forecast_lines) 
+    forecast_text = "\n".join(forecast_lines) 
 
     # پیام خروجی
     msg = (
         f"🌦 <b>وضعیت آب‌وهوای امروز</b>\n" 
-        f"📍 {region_name} | 📅 {date_fa}\n\n"
-        f"وضعیت: {desc_fa}\n"
-        f"دما: {temp_current}°C  (🔽{temp_min} 🔼{temp_max})\n"
-        f"رطوبت: {humidity}% | بارش: {pop}%\n"
-        f"کیفیت هوا: {aqi} ({aqi_text})\n\n"
-        f"<b>🔮 پیش‌بینی ۱۲ ساعت آینده:</b>\n\n"
+        f"📍 منطقه: {region_name}\n"
+        f"📅 تاریخ: {date_fa}\n"
+        f"وضعیت جوی: {desc_fa}\n"
+        f"دمای فعلی: {temp_current}°C\n"
+        f"رطوبت: {humidity}%\n"
+        f"احتمال بارش: {pop}%\n"
+        f"حداقل دما: {temp_min}°C\n"
+        f"حداکثر دما: {temp_max}°C\n"
+        f"شاخص کیفیت هوا ({aqi}): {aqi_text}\n\n"
+        f"<b>پیش‌بینی ۱۲ ساعت آینده:</b>\n"
         f"{forecast_text}" 
     )
 
