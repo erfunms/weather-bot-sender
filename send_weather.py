@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# send_weather.py (Final Version: All fixes applied - Robust Time Logic, Clean Format)
+# send_weather.py (Final Version: Dynamic 24-Hour Temp, Robust Formatting, Tehran AQI)
 
 import os
 import requests
@@ -62,7 +62,8 @@ def get_aqi_status(aqi_value):
 # --- توابع دریافت داده‌ها ---
 def fetch_weather_data(lat, lon):
     """دریافت داده‌های آب و هوا (جاری و پیش‌بینی) از Visual Crossing"""
-    url = f"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{lat},{lon}/today"
+    # ⬅️ درخواست داده‌های چند روزه برای پوشش ۲۴ ساعت آینده
+    url = f"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{lat},{lon}"
     params = {
         "unitGroup": UNITS,
         "key": VISUALCROSSING_KEY,
@@ -75,7 +76,10 @@ def fetch_weather_data(lat, lon):
 
 def fetch_air_pollution(lat, lon):
     """دریافت شاخص کیفیت هوا (AQI) از AQICN"""
-    url = f"https://api.waqi.info/feed/geo:{lat};{lon}/"
+    # ⬅️ تغییر به جستجوی عمومی شهر تهران برای میانگین بهتر و رفع مشکل اختلاف AQI
+    # اگر در شهر دیگری هستید، 'tehran/' را با نام شهر انگلیسی خود جایگزین کنید (مثلاً 'isfahan/')
+    url = "https://api.waqi.info/feed/tehran/" 
+    
     params = {"token": AQICN_TOKEN}
     r = requests.get(url, params=params, timeout=15)
     r.raise_for_status()
@@ -89,8 +93,8 @@ def fetch_air_pollution(lat, lon):
 # --- قالب پیام نهایی ---
 def format_message(region_name, weather_json, aqi_value):
     # زمان فعلی به وقت ایران (UTC + 3.5 ساعت) + تبدیل به شمسی
-    now = datetime.datetime.utcnow() + datetime.timedelta(hours=3.5)
-    j_now = jdatetime.datetime.fromgregorian(datetime=now)
+    now_gregorian_iran = datetime.datetime.utcnow() + datetime.timedelta(hours=3.5)
+    j_now = jdatetime.datetime.fromgregorian(datetime=now_gregorian_iran)
     date_fa = j_now.strftime("%Y/%m/%d")
     
     # ⬅️ استخراج داده‌های فعلی
@@ -98,63 +102,67 @@ def format_message(region_name, weather_json, aqi_value):
     
     desc = current.get("icon", "default")
     desc_fa = WEATHER_TRANSLATIONS.get(desc, WEATHER_TRANSLATIONS["default"]) 
-    temp = round(current.get("temp", 0), 1)
+    temp_current = round(current.get("temp", 0), 1) 
     humidity = current.get("humidity", "—")
     pop = int(current.get("precipprob", 0)) 
     
-    # ⬅️ استخراج داده‌های روزانه برای حداقل و حداکثر دما
-    daily_data = weather_json.get("days", [{}])[0]
-    temp_min = round(daily_data.get("tempmin", 0), 1)
-    temp_max = round(daily_data.get("tempmax", 0), 1)
+    
+    # ----------------------------------------------------
+    # منطق محاسبه حداقل و حداکثر دما برای ۲۴ ساعت آینده (پویا)
+    # ----------------------------------------------------
+    hours_list = []
+    
+    for day in weather_json.get("days", []):
+        hours_list.extend(day.get("hours", []))
 
+    start_time_utc = datetime.datetime.utcnow()
+    end_time_utc = start_time_utc + datetime.timedelta(hours=24)
+    
+    temps_in_24h = []
+    
+    for h in hours_list:
+        full_hour_utc = datetime.datetime.utcfromtimestamp(h.get('datetimeEpoch'))
+
+        if start_time_utc <= full_hour_utc <= end_time_utc:
+            temps_in_24h.append(h.get("temp"))
+
+    if temps_in_24h:
+        temp_min_24h = round(min(temps_in_24h), 1)
+        temp_max_24h = round(max(temps_in_24h), 1)
+    else:
+        temp_min_24h = temp_max_24h = "—" 
+    # ----------------------------------------------------
+    
     # شاخص کیفیت هوا (AQI)
     aqi = str(aqi_value)
     aqi_text = get_aqi_status(aqi_value)
 
     # ⬅️ منطق پیش‌بینی ۱۲ ساعت در ۴ بازه
     forecast_lines = []
-    hours_list = weather_json.get("days", [{}])[0].get("hours", [])
-    
-    # ساعت فعلی UTC (برای مقایسه با API)
-    now_utc = datetime.datetime.utcnow() 
-    
-    # پیدا کردن شاخص شروع: اولین ردیف ساعتی که در آینده قرار دارد
     start_index = 0
     
-    # جستجوی شاخص مربوط به اولین ساعت آینده
     for i, h in enumerate(hours_list):
-        # ساخت یک datetime شی برای زمان API (در UTC)
-        hour_api_str = h['datetime'].split(':')[0]
-        minute_api_str = h['datetime'].split(':')[1]
+        full_hour_utc = datetime.datetime.utcfromtimestamp(h.get('datetimeEpoch'))
         
-        # فرض می‌کنیم تاریخ API امروز در UTC است.
-        api_time_utc = now_utc.replace(hour=int(hour_api_str), minute=int(minute_api_str), second=0, microsecond=0)
-        
-        # اگر زمان API گذشته باشد، روز را به جلو می‌بریم (برای 00:00 API)
-        if api_time_utc.hour < now_utc.hour:
-            api_time_utc += datetime.timedelta(days=1)
-        
-        # اولین زمانی که دقیقا از زمان فعلی عبور کرده است و دقیقه صفر است
-        if api_time_utc > now_utc and int(minute_api_str) == 0:
+        if start_time_utc < full_hour_utc:
              start_index = i
              break
-
+        
     # پیش‌بینی ۱۲ ساعت آینده در ۴ بازه (هر ۳ ساعت یکبار)
+    # ⬅️ استفاده از جداکننده نامرئی یونیکد (U+200B) برای رفع مشکل بهم‌ریختگی R-L
+    SEPARATOR = "\u200b | \u200b" 
+
     for i in range(4): # 4 نقطه زمانی
         index_to_check = start_index + (i * 3) # پرش‌های 3 ساعته: 0, 3, 6, 9
         
-        # اگر شاخص از محدوده لیست امروز خارج شد
         if index_to_check >= len(hours_list):
              break 
             
         h = hours_list[index_to_check]
         
         # تبدیل زمان API (UTC) به زمان ایران (+ 3.5 ساعت) و شمسی
-        time_api_str = h['datetime']
-        hour_api_utc = int(time_api_str.split(':')[0])
-        minute_api = int(time_api_str.split(':')[1])
-        
-        ts_gregorian = datetime.datetime(j_now.year, j_now.month, j_now.day, hour_api_utc, minute_api) + datetime.timedelta(hours=3.5)
+        full_hour_utc = datetime.datetime.utcfromtimestamp(h.get('datetimeEpoch'))
+        ts_gregorian = full_hour_utc + datetime.timedelta(hours=3.5)
         j_ts = jdatetime.datetime.fromgregorian(datetime=ts_gregorian)
         time_str = j_ts.strftime("%H:%M") # زمان به وقت ایران (با دقیقه 30)
 
@@ -163,23 +171,28 @@ def format_message(region_name, weather_json, aqi_value):
         t = round(h.get("temp", 0), 1)
         p = int(h.get("precipprob", 0))
         
-        # ⬅️ اصلاح نهایی قالب‌بندی برای نمایش صحیح °C بعد از دما
-        # انتظار خروجی: 🕒 07:30 | آسمان صاف ☀️ | 🌡 12.7°C | ☔ 0% احتمال بارش
-        forecast_lines.append(f"🕒 {time_str} | {w_fa} | 🌡 {t}°C | ☔ {p}% احتمال بارش") 
+        # ⬅️ قالب‌بندی نهایی و مقاوم شده
+        time_section = f"🕒 {time_str}"
+        weather_section = w_fa
+        temp_section = f"🌡 {t}°C"
+        rain_section = f"☔ {p}% احتمال بارش"
+        
+        # ترکیب بخش‌ها با جداکننده نامرئی
+        forecast_lines.append(f"{time_section}{SEPARATOR}{weather_section}{SEPARATOR}{temp_section}{SEPARATOR}{rain_section}") 
 
     forecast_text = "\n".join(forecast_lines) 
 
-    # ⬅️ پیام خروجی (با حذف اعلام ساعت، منبع و ایموجی گوی)
+    # ⬅️ پیام خروجی (با استفاده از دمای محاسبه‌شده ۲۴ ساعته و نام فیلدهای اصلی)
     msg = (
         f"🌦 <b>وضعیت آب‌وهوای امروز</b>\n" 
         f"📍 منطقه: {region_name}\n"
         f"📅 تاریخ: {date_fa}\n"
         f"وضعیت جوی: {desc_fa}\n"
-        f"دمای فعلی: {temp}°C\n"
+        f"دمای فعلی: {temp_current}°C\n"
         f"رطوبت: {humidity}%\n"
         f"احتمال بارش: {pop}%\n"
-        f"حداقل دما: {temp_min}°C\n"
-        f"حداکثر دما: {temp_max}°C\n"
+        f"حداقل دما: {temp_min_24h}°C\n"
+        f"حداکثر دما: {temp_max_24h}°C\n"
         f"شاخص کیفیت هوا ({aqi}): {aqi_text}\n\n"
         f"<b>پیش‌بینی ۱۲ ساعت آینده:</b>\n{forecast_text}" 
     )
