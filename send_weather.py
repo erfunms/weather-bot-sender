@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# send_weather.py (Ultimate Final Version: Aggressive Unicode Fix & Stable AQI)
+# send_weather.py (Final Strategy: Vertical Layout & Official AQI Mirror)
 
 import os
 import requests
@@ -19,37 +19,35 @@ LON = os.environ.get("LON", "51.4181")
 UNITS = os.environ.get("UNITS", "metric") 
 
 if not TELEGRAM_TOKEN or not VISUALCROSSING_KEY or not AQICN_TOKEN:
-    raise SystemExit("⚠️ لطفاً تمام مقادیر لازم (TELEGRAM_TOKEN, VISUALCROSSING_KEY, AQICN_TOKEN) را تنظیم کنید.")
+    raise SystemExit("⚠️ لطفاً تمام مقادیر لازم را تنظیم کنید.")
 
 
 # --- دیکشنری‌های ترجمه ---
 WEATHER_TRANSLATIONS = {
-    "clear-day": "آسمان صاف ☀️", "clear-night": "آسمان صاف ☀️", 
+    "clear-day": "آسمان صاف ☀️", "clear-night": "آسمان صاف 🌙", 
     "cloudy": "ابری ☁️", "partly-cloudy-day": "نیمه ابری 🌤️",
-    "partly-cloudy-night": "نیمه ابری 🌤️", "rain": "باران 🌧️", 
+    "partly-cloudy-night": "نیمه ابری ☁️", "rain": "باران 🌧️", 
     "snow": "برف ❄️", "wind": "بادی 🌬️", "fog": "مه 🌫️",
     "sleet": "باران و برف 🌨️", "hail": "تگرگ 🧊",
     "thunderstorm": "تندرباد/رعد و برق ⛈️", "default": "نامشخص ❓"
 }
 
 def get_aqi_status(aqi_value):
-    if aqi_value is None or aqi_value == "—":
-        return "⚪️ نامشخص"
+    if aqi_value is None or aqi_value == "—": return "⚪️ نامشخص"
     try:
         aqi = int(aqi_value)
-    except ValueError:
-        return "⚪️ نامشخص"
+    except ValueError: return "⚪️ نامشخص"
         
-    if aqi <= 50: return "🟢 پاک — کیفیت هوا رضایت‌بخش است."
-    elif aqi <= 100: return "🟡 قابل قبول — احتیاط برای افراد حساس."
-    elif aqi <= 150: return "🟠 ناسالم برای گروه‌های حساس — فعالیت‌های طولانی‌مدت را محدود کنید."
-    elif aqi <= 200: return "🔴 ناسالم — همه ممکن است اثرات بهداشتی را تجربه کنند."
-    elif aqi <= 300: return "🟣 بسیار ناسالم — هشدار سلامت: خطرناک برای عموم."
-    else: return "🟤 خطرناک — وضعیت اضطراری سلامت."
+    if aqi <= 50: return "🟢 پاک"
+    elif aqi <= 100: return "🟡 قابل قبول"
+    elif aqi <= 150: return "🟠 ناسالم (گروه‌های حساس)"
+    elif aqi <= 200: return "🔴 ناسالم (همه)"
+    elif aqi <= 300: return "🟣 بسیار ناسالم"
+    else: return "🟤 خطرناک"
 
 # --- توابع دریافت داده‌ها ---
 def fetch_weather_data(lat, lon):
-    """دریافت داده‌های آب و هوا (جاری و پیش‌بینی) از Visual Crossing"""
+    """دریافت داده‌های آب و هوا از Visual Crossing"""
     url = f"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{lat},{lon}"
     params = {
         "unitGroup": UNITS,
@@ -62,23 +60,24 @@ def fetch_weather_data(lat, lon):
     return r.json()
 
 def fetch_air_pollution(lat, lon):
-    """دریافت شاخص کیفیت هوا (AQI) از AQICN (بازگشت به جستجوی عمومی تهران)"""
-    # ⬅️ بازگشت به جستجوی عمومی تهران برای جلوگیری از خطای ناپایداری ایستگاه خاص
+    """دریافت AQI از AQICN (میانگین کل تهران)"""
+    # استفاده از feed/tehran/ که معمولاً با سایت کنترل کیفیت هماهنگ است
     url = "https://api.waqi.info/feed/tehran/" 
-    
     params = {"token": AQICN_TOKEN}
-    r = requests.get(url, params=params, timeout=15)
-    r.raise_for_status()
-    data = r.json()
-    
-    if data.get("status") == "ok" and data.get("data") and data["data"].get("aqi"):
-        return data["data"]["aqi"]
+    try:
+        r = requests.get(url, params=params, timeout=15)
+        r.raise_for_status()
+        data = r.json()
+        if data.get("status") == "ok" and data.get("data"):
+            return data["data"].get("aqi", "—")
+    except:
+        pass
     return "—" 
 
 
 # --- قالب پیام نهایی ---
 def format_message(region_name, weather_json, aqi_value):
-    # زمان فعلی به وقت ایران (UTC + 3.5 ساعت) + تبدیل به شمسی
+    # زمان فعلی به وقت ایران
     now_gregorian_iran = datetime.datetime.utcnow() + datetime.timedelta(hours=3.5)
     j_now = jdatetime.datetime.fromgregorian(datetime=now_gregorian_iran)
     date_fa = j_now.strftime("%Y/%m/%d")
@@ -90,10 +89,7 @@ def format_message(region_name, weather_json, aqi_value):
     humidity = current.get("humidity", "—")
     pop = int(current.get("precipprob", 0)) 
     
-    
-    # ----------------------------------------------------
-    # منطق محاسبه حداقل و حداکثر دما برای ۲۴ ساعت آینده (پویا)
-    # ----------------------------------------------------
+    # --- محاسبه حداقل/حداکثر دما (۲۴ ساعت آینده) ---
     hours_list = []
     for day in weather_json.get("days", []):
         hours_list.extend(day.get("hours", []))
@@ -108,16 +104,15 @@ def format_message(region_name, weather_json, aqi_value):
             temps_in_24h.append(h.get("temp"))
 
     if temps_in_24h:
-        temp_min_24h = round(min(temps_in_24h), 1)
-        temp_max_24h = round(max(temps_in_24h), 1)
+        temp_min = round(min(temps_in_24h), 1)
+        temp_max = round(max(temps_in_24h), 1)
     else:
-        temp_min_24h = temp_max_24h = "—" 
-    # ----------------------------------------------------
+        temp_min = temp_max = "—" 
     
     aqi = str(aqi_value)
     aqi_text = get_aqi_status(aqi_value)
 
-    # ⬅️ منطق پیش‌بینی ۱۲ ساعت در ۴ بازه
+    # --- ساخت بخش پیش‌بینی (طراحی دو خطی برای رفع مشکل نگارشی) ---
     forecast_lines = []
     start_index = 0
     
@@ -127,106 +122,73 @@ def format_message(region_name, weather_json, aqi_value):
              start_index = i
              break
         
-    # ⚠️ تعریف کاراکترهای یونیکد برای اجبار جهت نمایش و تفکیک
-    RLO = "\u202E" # Right-to-Left Override - قوی‌ترین دستور
-    LRE = "\u202A" # Left-to-Right Embedding
-    PDF = "\u202C" # Pop Directional Formatting
-    ZWNJ = "\u200c" # Zero Width Non-Joiner - جداکننده قوی
-    SEPARATOR = " | "
-
-    for i in range(4): # 4 نقطه زمانی
+    for i in range(4): 
         index_to_check = start_index + (i * 3)
-        
-        if index_to_check >= len(hours_list):
-             break 
+        if index_to_check >= len(hours_list): break 
             
         h = hours_list[index_to_check]
-        
         full_hour_utc = datetime.datetime.utcfromtimestamp(h.get('datetimeEpoch'))
         ts_gregorian = full_hour_utc + datetime.timedelta(hours=3.5)
-        j_ts = jdatetime.datetime.fromgregorian(datetime=ts_gregorian)
-        time_str = j_ts.strftime("%H:%M") 
+        time_str = jdatetime.datetime.fromgregorian(datetime=ts_gregorian).strftime("%H:%M")
 
         w = h.get("icon", "default")
         w_fa = WEATHER_TRANSLATIONS.get(w, WEATHER_TRANSLATIONS["default"])
         t = round(h.get("temp", 0), 1)
         p = int(h.get("precipprob", 0))
         
-        # ⬅️ قالب‌بندی نهایی و مقاوم شده: استفاده ترکیبی از RLO برای کل خط و ZWNJ برای اجزای عددی
-        
-        # 1. بخش زمان
-        time_section = f"🕒 {time_str}"
-        # 2. بخش وضعیت جوی
-        weather_section = w_fa
-        # 3. بخش دما (T°C) - چسباندن T به °C با ZWNJ
-        temp_section = f"🌡{t}{ZWNJ}°C"
-        # 4. بخش بارش (P%) - چسباندن P به % با ZWNJ
-        rain_section = f"☔{p}%{ZWNJ} احتمال بارش"
-        
-        # ترکیب بخش‌ها: استفاده از RLO برای مجبور کردن کل خط به جهت‌گیری صحیح
-        forecast_lines.append(
-            f"{RLO}{time_section}{SEPARATOR}{weather_section}{SEPARATOR}{temp_section}{SEPARATOR}{rain_section}"
+        # ✅ تغییر استراتژی: نمایش در دو خط برای جلوگیری از تداخل فارسی/انگلیسی
+        # خط اول: ساعت و وضعیت جوی
+        # خط دوم: دما و بارش (کاملاً جدا از متن فارسی)
+        line = (
+            f"🕒 <b>{time_str}</b>  {w_fa}\n"
+            f"   🌡 {t}°C    ☔ {p}% بارش\n"
         )
+        forecast_lines.append(line)
 
-    forecast_text = "\n".join(forecast_lines) 
+    forecast_text = "".join(forecast_lines) 
 
-    # ⬅️ پیام خروجی نهایی
-    # در این بخش، ما دیگر از <pre> استفاده نمی‌کنیم و فقط به دستورات Unicode تکیه می‌کنیم.
+    # پیام خروجی
     msg = (
         f"🌦 <b>وضعیت آب‌وهوای امروز</b>\n" 
-        f"📍 منطقه: {region_name}\n"
-        f"📅 تاریخ: {date_fa}\n"
-        f"وضعیت جوی: {desc_fa}\n"
-        f"دمای فعلی: {temp_current}°C\n"
-        f"رطوبت: {humidity}%\n"
-        f"احتمال بارش: {pop}%\n"
-        f"حداقل دما: {temp_min_24h}°C\n"
-        f"حداکثر دما: {temp_max_24h}°C\n"
-        f"شاخص کیفیت هوا ({aqi}): {aqi_text}\n\n"
-        f"<b>پیش‌بینی ۱۲ ساعت آینده:</b>\n"
+        f"📍 {region_name} | 📅 {date_fa}\n\n"
+        f"وضعیت: {desc_fa}\n"
+        f"دما: {temp_current}°C  (🔽{temp_min} 🔼{temp_max})\n"
+        f"رطوبت: {humidity}% | بارش: {pop}%\n"
+        f"کیفیت هوا: {aqi} ({aqi_text})\n\n"
+        f"<b>🔮 پیش‌بینی ۱۲ ساعت آینده:</b>\n\n"
         f"{forecast_text}" 
     )
 
     return msg
 
-# --- توابع ارسال پیام (بدون تغییر) ---
+# --- توابع ارسال پیام ---
 def send_photo(chat_id, photo_url, caption_html):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
     data = {"chat_id": chat_id, "caption": caption_html, "parse_mode": "HTML", "photo": photo_url}
-    r = requests.post(url, data=data, timeout=20)
-    r.raise_for_status()
-    return r.json()
+    requests.post(url, data=data, timeout=20)
 
 def send_message(chat_id, text_html):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     data = {"chat_id": chat_id, "text": text_html, "parse_mode": "HTML"}
-    r = requests.post(url, data=data, timeout=20)
-    r.raise_for_status()
-    return r.json()
+    requests.post(url, data=data, timeout=20)
 
-# --- اجرای اصلی (بدون تغییر) ---
+# --- اجرای اصلی ---
 def main():
     latf = float(LAT)
     lonf = float(LON)
     
     weather_data = fetch_weather_data(latf, lonf)
     aqi_value = fetch_air_pollution(latf, lonf) 
-    
     caption = format_message(REGION_NAME, weather_data, aqi_value)
 
     chat_ids = [c.strip() for c in CHAT_IDS.split(",") if c.strip()]
-    if not chat_ids:
-        raise SystemExit("⚠️ لطفاً CHAT_IDS را تنظیم کنید.")
-
     for cid in chat_ids:
         try:
-            if IMAGE_URL:
-                send_photo(cid, IMAGE_URL, caption)
-            else:
-                send_message(cid, caption)
+            if IMAGE_URL: send_photo(cid, IMAGE_URL, caption)
+            else: send_message(cid, caption)
             time.sleep(1)
         except Exception as e:
-            print(f"❌ ارسال پیام به {cid} ناموفق بود: {e}") 
+            print(f"Error sending to {cid}: {e}") 
 
 if __name__ == "__main__":
     main()
