@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# send_weather.py (Final Version: Dynamic 24-Hour Temp, Robust Formatting, Tehran AQI)
+# send_weather.py (Ultimate Final Version: Fixed All Known Issues)
 
 import os
 import requests
@@ -62,7 +62,6 @@ def get_aqi_status(aqi_value):
 # --- توابع دریافت داده‌ها ---
 def fetch_weather_data(lat, lon):
     """دریافت داده‌های آب و هوا (جاری و پیش‌بینی) از Visual Crossing"""
-    # ⬅️ درخواست داده‌های چند روزه برای پوشش ۲۴ ساعت آینده
     url = f"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{lat},{lon}"
     params = {
         "unitGroup": UNITS,
@@ -76,8 +75,8 @@ def fetch_weather_data(lat, lon):
 
 def fetch_air_pollution(lat, lon):
     """دریافت شاخص کیفیت هوا (AQI) از AQICN"""
-    # ⬅️ تغییر به جستجوی عمومی شهر تهران برای میانگین بهتر و رفع مشکل اختلاف AQI
-    # اگر در شهر دیگری هستید، 'tehran/' را با نام شهر انگلیسی خود جایگزین کنید (مثلاً 'isfahan/')
+    # ⬅️ استفاده از جستجوی عمومی شهر تهران برای دقت بالاتر AQI
+    # اگر در شهر دیگری هستید، 'tehran/' را با نام شهر انگلیسی خود جایگزین کنید 
     url = "https://api.waqi.info/feed/tehran/" 
     
     params = {"token": AQICN_TOKEN}
@@ -149,8 +148,11 @@ def format_message(region_name, weather_json, aqi_value):
              break
         
     # پیش‌بینی ۱۲ ساعت آینده در ۴ بازه (هر ۳ ساعت یکبار)
-    # ⬅️ استفاده از جداکننده نامرئی یونیکد (U+200B) برای رفع مشکل بهم‌ریختگی R-L
-    SEPARATOR = "\u200b | \u200b" 
+    
+    # ⚠️ تعریف کاراکترهای یونیکد برای اجبار به نمایش LTR و جداکننده مقاوم
+    LRE = "\u202A" # Left-to-Right Embedding
+    PDF = "\u202C" # Pop Directional Formatting
+    SEPARATOR = "\u200b | \u200b" # جداکننده نامرئی با خط عمودی
 
     for i in range(4): # 4 نقطه زمانی
         index_to_check = start_index + (i * 3) # پرش‌های 3 ساعته: 0, 3, 6, 9
@@ -164,20 +166,22 @@ def format_message(region_name, weather_json, aqi_value):
         full_hour_utc = datetime.datetime.utcfromtimestamp(h.get('datetimeEpoch'))
         ts_gregorian = full_hour_utc + datetime.timedelta(hours=3.5)
         j_ts = jdatetime.datetime.fromgregorian(datetime=ts_gregorian)
-        time_str = j_ts.strftime("%H:%M") # زمان به وقت ایران (با دقیقه 30)
+        time_str = j_ts.strftime("%H:%M") 
 
         w = h.get("icon", "default")
         w_fa = WEATHER_TRANSLATIONS.get(w, WEATHER_TRANSLATIONS["default"])
         t = round(h.get("temp", 0), 1)
         p = int(h.get("precipprob", 0))
         
-        # ⬅️ قالب‌بندی نهایی و مقاوم شده
+        # ⬅️ قالب‌بندی نهایی و مقاوم شده با LRE و PDF برای رفع مشکل نگارشی
+        
         time_section = f"🕒 {time_str}"
         weather_section = w_fa
-        temp_section = f"🌡 {t}°C"
-        rain_section = f"☔ {p}% احتمال بارش"
+        # تضمین نمایش صحیح دما و °C
+        temp_section = f"{LRE}🌡 {t}°C{PDF}" 
+        # تضمین نمایش صحیح احتمال بارش و %
+        rain_section = f"{LRE}☔ {p}% احتمال بارش{PDF}" 
         
-        # ترکیب بخش‌ها با جداکننده نامرئی
         forecast_lines.append(f"{time_section}{SEPARATOR}{weather_section}{SEPARATOR}{temp_section}{SEPARATOR}{rain_section}") 
 
     forecast_text = "\n".join(forecast_lines) 
