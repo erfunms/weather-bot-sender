@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# send_weather.py (Focus: Layout Fix with LRM)
+# send_weather.py (Final Fix: Applying LRM to Header and Footer)
 
 import os
 import requests
@@ -7,7 +7,7 @@ import datetime
 import time
 import jdatetime
 
-# --- تنظیمات اصلی ---
+# --- تنظیمات ---
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 VISUALCROSSING_KEY = os.environ.get("VISUALCROSSING_KEY") 
 AQICN_TOKEN = os.environ.get("AQICN_TOKEN") 
@@ -19,9 +19,9 @@ LON = os.environ.get("LON", "51.4181")
 UNITS = os.environ.get("UNITS", "metric") 
 
 if not TELEGRAM_TOKEN or not VISUALCROSSING_KEY or not AQICN_TOKEN:
-    raise SystemExit("⚠️ لطفاً تمام مقادیر لازم را تنظیم کنید.")
+    raise SystemExit("Error: Missing Environment Variables.")
 
-# --- دیکشنری‌ها ---
+# --- دیکشنری ---
 WEATHER_TRANSLATIONS = {
     "clear-day": "آسمان صاف ☀️", "clear-night": "آسمان صاف 🌙", 
     "cloudy": "ابری ☁️", "partly-cloudy-day": "نیمه ابری 🌤️",
@@ -43,7 +43,13 @@ def get_aqi_status(aqi_value):
     elif aqi <= 300: return "🟣 بسیار ناسالم"
     else: return "🟤 خطرناک"
 
-# --- توابع دریافت داده ---
+# --- تابع کمکی برای اصلاح جهت متن (LRM) ---
+def fix_text(text):
+    """این تابع متن را بین دو کاراکتر نامرئی چپ-به-راست قرار می‌دهد تا جابجا نشود"""
+    LRM = "\u200E"
+    return f"{LRM}{text}{LRM}"
+
+# --- دریافت داده ---
 def fetch_weather_data(lat, lon):
     url = f"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{lat},{lon}"
     params = {"unitGroup": UNITS, "key": VISUALCROSSING_KEY, "contentType": "json", "include": "current,hours,days"}
@@ -51,7 +57,6 @@ def fetch_weather_data(lat, lon):
     return r.json()
 
 def fetch_air_pollution(lat, lon):
-    # فعلاً روی تهران تنظیم است تا پایدار باشد
     url = "https://api.waqi.info/feed/tehran/" 
     params = {"token": AQICN_TOKEN}
     try:
@@ -60,32 +65,35 @@ def fetch_air_pollution(lat, lon):
     except: pass
     return "—" 
 
-# --- فرمت پیام (بخش اصلاح شده با LRM) ---
+# --- فرمت پیام ---
 def format_message(region_name, weather_json, aqi_value):
+    # زمان
     now = datetime.datetime.utcnow() + datetime.timedelta(hours=3.5)
     j_now = jdatetime.datetime.fromgregorian(datetime=now)
     date_fa = j_now.strftime("%Y/%m/%d")
     
+    # داده‌های فعلی
     current = weather_json.get("currentConditions", {})
     desc = WEATHER_TRANSLATIONS.get(current.get("icon", "default"), "نامشخص")
-    temp_cur = round(current.get("temp", 0), 1)
+    temp_val = round(current.get("temp", 0), 1)
     
-    # محاسبه دماهای مینیمم و ماکزیمم 24 ساعته
+    # اصلاح نگارشی دمای فعلی (اضافه کردن LRM)
+    temp_str = fix_text(f"{temp_val}°C")
+    
+    # محاسبه مینیمم/ماکزیمم
     hours = []
     for d in weather_json.get("days", []): hours.extend(d.get("hours", []))
     start = datetime.datetime.utcnow(); end = start + datetime.timedelta(hours=24)
     temps_24h = [h.get("temp") for h in hours if start <= datetime.datetime.utcfromtimestamp(h.get('datetimeEpoch')) <= end]
     
-    t_min = round(min(temps_24h), 1) if temps_24h else "—"
-    t_max = round(max(temps_24h), 1) if temps_24h else "—"
+    # اصلاح نگارشی مینیمم/ماکزیمم
+    t_min = fix_text(f"{round(min(temps_24h), 1)}°C") if temps_24h else "—"
+    t_max = fix_text(f"{round(max(temps_24h), 1)}°C") if temps_24h else "—"
     
-    # --- بخش اصلی اصلاح نگارشی ---
+    # --- بخش پیش‌بینی ---
     forecast_lines = []
     start_idx = next((i for i, h in enumerate(hours) if datetime.datetime.utcfromtimestamp(h.get('datetimeEpoch')) > start), 0)
     
-    # LRM: کاراکتر نامرئی که به تلگرام می‌گوید "اینجا متن چپ-به-راست است"
-    LRM = "\u200E"
-
     for i in range(4):
         idx = start_idx + (i * 3)
         if idx >= len(hours): break
@@ -94,23 +102,25 @@ def format_message(region_name, weather_json, aqi_value):
         ts = datetime.datetime.utcfromtimestamp(h.get('datetimeEpoch')) + datetime.timedelta(hours=3.5)
         time_str = jdatetime.datetime.fromgregorian(datetime=ts).strftime("%H:%M")
         w_fa = WEATHER_TRANSLATIONS.get(h.get("icon", "default"), "؟")
-        t = round(h.get("temp", 0), 1)
-        p = int(h.get("precipprob", 0))
         
-        # ✅ اصلاح با LRM:
-        # ما دما و درصد را بین دو LRM ساندویچ می‌کنیم.
-        # این کار باعث می‌شود °C و % دقیقاً سر جای خودشان بمانند.
-        formatted_temp = f"{LRM}{t}°C{LRM}"
-        formatted_rain = f"{LRM}{p}%{LRM}"
+        t_forecast = round(h.get("temp", 0), 1)
+        p_forecast = int(h.get("precipprob", 0))
         
-        line = f"🕒 {time_str} | {w_fa} | 🌡 {formatted_temp} | ☔ {formatted_rain} بارش"
+        # اصلاح نگارشی مقادیر پیش‌بینی
+        f_temp = fix_text(f"{t_forecast}°C")
+        f_rain = fix_text(f"{p_forecast}%")
+        
+        line = f"🕒 {time_str} | {w_fa} | 🌡 {f_temp} | ☔ {f_rain} بارش"
         forecast_lines.append(line)
 
+    # پیام نهایی
     msg = (
         f"🌦 <b>وضعیت آب‌وهوای امروز</b>\n"
-        f"📍 منطقه: {region_name}\n📅 تاریخ: {date_fa}\n"
-        f"وضعیت: {desc}\nدمای فعلی: {temp_cur}°C\n"
-        f"حداقل: {t_min}°C | حداکثر: {t_max}°C\n"
+        f"📍 منطقه: {region_name}\n"
+        f"📅 تاریخ: {date_fa}\n"
+        f"وضعیت: {desc}\n"
+        f"دمای فعلی: {temp_str}\n" # حالا این درست نمایش داده می‌شود
+        f"حداقل: {t_min} | حداکثر: {t_max}\n" # این‌ها هم درست می‌شوند
         f"کیفیت هوا: {aqi_value} ({get_aqi_status(aqi_value)})\n\n"
         f"<b>پیش‌بینی ۱۲ ساعت آینده:</b>\n" + "\n".join(forecast_lines)
     )
