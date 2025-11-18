@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# send_weather.py (Final: Original Layout + Fixed Text Direction + Stable AQI)
+# send_weather.py (Focus: Layout Fix with LRM)
 
 import os
 import requests
@@ -21,7 +21,7 @@ UNITS = os.environ.get("UNITS", "metric")
 if not TELEGRAM_TOKEN or not VISUALCROSSING_KEY or not AQICN_TOKEN:
     raise SystemExit("⚠️ لطفاً تمام مقادیر لازم را تنظیم کنید.")
 
-# --- دیکشنری‌های ترجمه ---
+# --- دیکشنری‌ها ---
 WEATHER_TRANSLATIONS = {
     "clear-day": "آسمان صاف ☀️", "clear-night": "آسمان صاف 🌙", 
     "cloudy": "ابری ☁️", "partly-cloudy-day": "نیمه ابری 🌤️",
@@ -36,7 +36,6 @@ def get_aqi_status(aqi_value):
     try:
         aqi = int(aqi_value)
     except ValueError: return "⚪️ نامشخص"
-        
     if aqi <= 50: return "🟢 پاک"
     elif aqi <= 100: return "🟡 قابل قبول"
     elif aqi <= 150: return "🟠 ناسالم (حساس)"
@@ -44,153 +43,92 @@ def get_aqi_status(aqi_value):
     elif aqi <= 300: return "🟣 بسیار ناسالم"
     else: return "🟤 خطرناک"
 
-# --- توابع دریافت داده‌ها ---
+# --- توابع دریافت داده ---
 def fetch_weather_data(lat, lon):
-    """دریافت داده‌های آب و هوا از Visual Crossing"""
     url = f"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{lat},{lon}"
-    params = {
-        "unitGroup": UNITS,
-        "key": VISUALCROSSING_KEY,
-        "contentType": "json",
-        "include": "current,hours,days" 
-    }
-    r = requests.get(url, params=params, timeout=15)
-    r.raise_for_status()
+    params = {"unitGroup": UNITS, "key": VISUALCROSSING_KEY, "contentType": "json", "include": "current,hours,days"}
+    r = requests.get(url, params=params, timeout=15); r.raise_for_status()
     return r.json()
 
 def fetch_air_pollution(lat, lon):
-    """دریافت AQI از AQICN (عمومی تهران برای پایداری)"""
-    # استفاده از لینک عمومی تهران برای جلوگیری از قطع شدن داده
+    # فعلاً روی تهران تنظیم است تا پایدار باشد
     url = "https://api.waqi.info/feed/tehran/" 
     params = {"token": AQICN_TOKEN}
     try:
-        r = requests.get(url, params=params, timeout=15)
-        r.raise_for_status()
-        data = r.json()
-        if data.get("status") == "ok" and data.get("data"):
-            return data["data"].get("aqi", "—")
-    except:
-        pass
+        r = requests.get(url, params=params, timeout=15); r.raise_for_status(); data = r.json()
+        if data.get("status") == "ok" and data.get("data"): return data["data"].get("aqi", "—")
+    except: pass
     return "—" 
 
-
-# --- قالب پیام نهایی ---
+# --- فرمت پیام (بخش اصلاح شده با LRM) ---
 def format_message(region_name, weather_json, aqi_value):
-    now_gregorian_iran = datetime.datetime.utcnow() + datetime.timedelta(hours=3.5)
-    j_now = jdatetime.datetime.fromgregorian(datetime=now_gregorian_iran)
+    now = datetime.datetime.utcnow() + datetime.timedelta(hours=3.5)
+    j_now = jdatetime.datetime.fromgregorian(datetime=now)
     date_fa = j_now.strftime("%Y/%m/%d")
     
     current = weather_json.get("currentConditions", {})
-    desc = current.get("icon", "default")
-    desc_fa = WEATHER_TRANSLATIONS.get(desc, WEATHER_TRANSLATIONS["default"]) 
-    temp_current = round(current.get("temp", 0), 1) 
-    humidity = current.get("humidity", "—")
-    pop = int(current.get("precipprob", 0)) 
+    desc = WEATHER_TRANSLATIONS.get(current.get("icon", "default"), "نامشخص")
+    temp_cur = round(current.get("temp", 0), 1)
     
-    # محاسبه حداقل/حداکثر ۲۴ ساعته
-    hours_list = []
-    for day in weather_json.get("days", []):
-        hours_list.extend(day.get("hours", []))
-
-    start_time_utc = datetime.datetime.utcnow()
-    end_time_utc = start_time_utc + datetime.timedelta(hours=24)
-    temps_in_24h = []
+    # محاسبه دماهای مینیمم و ماکزیمم 24 ساعته
+    hours = []
+    for d in weather_json.get("days", []): hours.extend(d.get("hours", []))
+    start = datetime.datetime.utcnow(); end = start + datetime.timedelta(hours=24)
+    temps_24h = [h.get("temp") for h in hours if start <= datetime.datetime.utcfromtimestamp(h.get('datetimeEpoch')) <= end]
     
-    for h in hours_list:
-        full_hour_utc = datetime.datetime.utcfromtimestamp(h.get('datetimeEpoch'))
-        if start_time_utc <= full_hour_utc <= end_time_utc:
-            temps_in_24h.append(h.get("temp"))
-
-    if temps_in_24h:
-        temp_min = round(min(temps_in_24h), 1)
-        temp_max = round(max(temps_in_24h), 1)
-    else:
-        temp_min = temp_max = "—" 
+    t_min = round(min(temps_24h), 1) if temps_24h else "—"
+    t_max = round(max(temps_24h), 1) if temps_24h else "—"
     
-    aqi = str(aqi_value)
-    aqi_text = get_aqi_status(aqi_value)
-
-    # --- پیش‌بینی ۱۲ ساعته (طراحی تک‌خطی اصلاح شده) ---
+    # --- بخش اصلی اصلاح نگارشی ---
     forecast_lines = []
-    start_index = 0
+    start_idx = next((i for i, h in enumerate(hours) if datetime.datetime.utcfromtimestamp(h.get('datetimeEpoch')) > start), 0)
     
-    for i, h in enumerate(hours_list):
-        full_hour_utc = datetime.datetime.utcfromtimestamp(h.get('datetimeEpoch'))
-        if start_time_utc < full_hour_utc:
-             start_index = i
-             break
+    # LRM: کاراکتر نامرئی که به تلگرام می‌گوید "اینجا متن چپ-به-راست است"
+    LRM = "\u200E"
+
+    for i in range(4):
+        idx = start_idx + (i * 3)
+        if idx >= len(hours): break
+        h = hours[idx]
         
-    # کاراکترهای نامرئی برای ایزوله کردن جهت متن (معجزه رفع باگ)
-    LRE = "\u202A" # شروع متن چپ-به-راست (برای اعداد)
-    PDF = "\u202C" # پایان ایزوله
-
-    for i in range(4): 
-        index_to_check = start_index + (i * 3)
-        if index_to_check >= len(hours_list): break 
-            
-        h = hours_list[index_to_check]
-        full_hour_utc = datetime.datetime.utcfromtimestamp(h.get('datetimeEpoch'))
-        ts_gregorian = full_hour_utc + datetime.timedelta(hours=3.5)
-        time_str = jdatetime.datetime.fromgregorian(datetime=ts_gregorian).strftime("%H:%M")
-
-        w = h.get("icon", "default")
-        w_fa = WEATHER_TRANSLATIONS.get(w, WEATHER_TRANSLATIONS["default"])
+        ts = datetime.datetime.utcfromtimestamp(h.get('datetimeEpoch')) + datetime.timedelta(hours=3.5)
+        time_str = jdatetime.datetime.fromgregorian(datetime=ts).strftime("%H:%M")
+        w_fa = WEATHER_TRANSLATIONS.get(h.get("icon", "default"), "؟")
         t = round(h.get("temp", 0), 1)
         p = int(h.get("precipprob", 0))
         
-        # ✅ ساختار تک‌خطی اصلی، اما با اعداد ایزوله شده
-        # اعداد داخل LRE و PDF قرار می‌گیرند تا با متن فارسی قاطی نشوند
-        line = f"🕒 {time_str} | {w_fa} | 🌡 {LRE}{t}°C{PDF} | ☔ {LRE}{p}%{PDF} بارش"
+        # ✅ اصلاح با LRM:
+        # ما دما و درصد را بین دو LRM ساندویچ می‌کنیم.
+        # این کار باعث می‌شود °C و % دقیقاً سر جای خودشان بمانند.
+        formatted_temp = f"{LRM}{t}°C{LRM}"
+        formatted_rain = f"{LRM}{p}%{LRM}"
+        
+        line = f"🕒 {time_str} | {w_fa} | 🌡 {formatted_temp} | ☔ {formatted_rain} بارش"
         forecast_lines.append(line)
 
-    forecast_text = "\n".join(forecast_lines) 
-
-    # پیام خروجی
     msg = (
-        f"🌦 <b>وضعیت آب‌وهوای امروز</b>\n" 
-        f"📍 منطقه: {region_name}\n"
-        f"📅 تاریخ: {date_fa}\n"
-        f"وضعیت جوی: {desc_fa}\n"
-        f"دمای فعلی: {temp_current}°C\n"
-        f"رطوبت: {humidity}%\n"
-        f"احتمال بارش: {pop}%\n"
-        f"حداقل دما: {temp_min}°C\n"
-        f"حداکثر دما: {temp_max}°C\n"
-        f"شاخص کیفیت هوا ({aqi}): {aqi_text}\n\n"
-        f"<b>پیش‌بینی ۱۲ ساعت آینده:</b>\n"
-        f"{forecast_text}" 
+        f"🌦 <b>وضعیت آب‌وهوای امروز</b>\n"
+        f"📍 منطقه: {region_name}\n📅 تاریخ: {date_fa}\n"
+        f"وضعیت: {desc}\nدمای فعلی: {temp_cur}°C\n"
+        f"حداقل: {t_min}°C | حداکثر: {t_max}°C\n"
+        f"کیفیت هوا: {aqi_value} ({get_aqi_status(aqi_value)})\n\n"
+        f"<b>پیش‌بینی ۱۲ ساعت آینده:</b>\n" + "\n".join(forecast_lines)
     )
-
     return msg
 
-# --- توابع ارسال پیام ---
-def send_photo(chat_id, photo_url, caption_html):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
-    data = {"chat_id": chat_id, "caption": caption_html, "parse_mode": "HTML", "photo": photo_url}
-    requests.post(url, data=data, timeout=20)
-
-def send_message(chat_id, text_html):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    data = {"chat_id": chat_id, "text": text_html, "parse_mode": "HTML"}
-    requests.post(url, data=data, timeout=20)
-
-# --- اجرای اصلی ---
+# --- ارسال ---
 def main():
-    latf = float(LAT)
-    lonf = float(LON)
+    lat, lon = float(LAT), float(LON)
+    wd = fetch_weather_data(lat, lon)
+    aqi = fetch_air_pollution(lat, lon)
+    msg = format_message(REGION_NAME, wd, aqi)
     
-    weather_data = fetch_weather_data(latf, lonf)
-    aqi_value = fetch_air_pollution(latf, lonf) 
-    caption = format_message(REGION_NAME, weather_data, aqi_value)
-
-    chat_ids = [c.strip() for c in CHAT_IDS.split(",") if c.strip()]
-    for cid in chat_ids:
+    for cid in [c.strip() for c in CHAT_IDS.split(",") if c.strip()]:
         try:
-            if IMAGE_URL: send_photo(cid, IMAGE_URL, caption)
-            else: send_message(cid, caption)
-            time.sleep(1)
-        except Exception as e:
-            print(f"Error sending to {cid}: {e}") 
+            url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto" if IMAGE_URL else f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+            data = {"chat_id": cid, "caption" if IMAGE_URL else "text": msg, "parse_mode": "HTML"}
+            if IMAGE_URL: data["photo"] = IMAGE_URL
+            requests.post(url, data=data, timeout=20)
+        except Exception as e: print(f"Error: {e}")
 
-if __name__ == "__main__":
-    main()
+if __name__ == "__main__": main()
