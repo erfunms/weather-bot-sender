@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# send_weather.py (Ultimate Final Version: Directional Overrides for Garbled Text)
+# send_weather.py (Ultimate Final Version: Park Shahr AQI, RLO/ZWNJ Formatting)
 
 import os
 import requests
@@ -8,12 +8,14 @@ import time
 import jdatetime
 
 # --- تنظیمات اصلی ---
+# این مقادیر از Secretها یا مقادیر پیش‌فرض استفاده می‌کنند
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 VISUALCROSSING_KEY = os.environ.get("VISUALCROSSING_KEY") 
 AQICN_TOKEN = os.environ.get("AQICN_TOKEN") 
 CHAT_IDS = os.environ.get("CHAT_IDS", "")
 REGION_NAME = os.environ.get("REGION_NAME", "پانزده خرداد")
 IMAGE_URL = os.environ.get("IMAGE_URL", "")
+# LAT و LON اکنون از محیط (GitHub Secrets) خوانده می‌شوند.
 LAT = os.environ.get("LAT", "35.6764")
 LON = os.environ.get("LON", "51.4181")
 UNITS = os.environ.get("UNITS", "metric") 
@@ -40,6 +42,7 @@ def get_aqi_status(aqi_value):
     except ValueError:
         return "⚪️ نامشخص"
         
+    # مقیاس‌های AQI
     if aqi <= 50: return "🟢 پاک — کیفیت هوا رضایت‌بخش است."
     elif aqi <= 100: return "🟡 قابل قبول — احتیاط برای افراد حساس."
     elif aqi <= 150: return "🟠 ناسالم برای گروه‌های حساس — فعالیت‌های طولانی‌مدت را محدود کنید."
@@ -62,9 +65,9 @@ def fetch_weather_data(lat, lon):
     return r.json()
 
 def fetch_air_pollution(lat, lon):
-    """دریافت شاخص کیفیت هوا (AQI) از AQICN"""
-    # ⬅️ جستجوی عمومی شهر تهران برای دقت بالاتر AQI
-    url = "https://api.waqi.info/feed/tehran/" 
+    """دریافت شاخص کیفیت هوا (AQI) از AQICN برای ایستگاه پارک شهر"""
+    # ⬅️ جستجوی مستقیم ایستگاه پارک شهر برای دقت حداکثری
+    url = "https://api.waqi.info/feed/tehran/park-shahr/" 
     
     params = {"token": AQICN_TOKEN}
     r = requests.get(url, params=params, timeout=15)
@@ -127,13 +130,9 @@ def format_message(region_name, weather_json, aqi_value):
              start_index = i
              break
         
-    # ⚠️ تعریف کاراکترهای یونیکد برای اجبار جهت نمایش LTR (چپ به راست)
-    # LRE: Left-to-Right Embedding (U+202A)
-    # PDF: Pop Directional Formatting (U+202C)
-    # ZWNJ: Zero Width Non-Joiner (U+200C) برای تفکیک دقیق
-    LRE = "\u202A" 
-    PDF = "\u202C" 
-    ZWNJ = "\u200c"
+    # ⚠️ تعریف کاراکترهای یونیکد برای اجبار جهت نمایش و تفکیک (RLO و ZWNJ)
+    RLO = "\u202E" # Right-to-Left Override - قوی‌ترین دستور
+    ZWNJ = "\u200c" # Zero Width Non-Joiner - جداکننده قوی
     SEPARATOR = " | "
 
     for i in range(4): # 4 نقطه زمانی
@@ -154,22 +153,20 @@ def format_message(region_name, weather_json, aqi_value):
         t = round(h.get("temp", 0), 1)
         p = int(h.get("precipprob", 0))
         
-        # ⬅️ قالب‌بندی نهایی و مقاوم شده: از LRE/PDF فقط برای دما و بارش استفاده می‌کنیم.
+        # ⬅️ قالب‌بندی نهایی و مقاوم شده: استفاده از RLO و ZWNJ برای رفع مشکل نگارشی
         
-        # 1. زمان و وضعیت جوی (RTL)
-        time_weather = f"🕒 {time_str}{SEPARATOR}{w_fa}"
+        # 1. بخش زمان
+        time_section = f"🕒 {time_str}"
+        # 2. بخش وضعیت جوی
+        weather_section = w_fa
+        # 3. بخش دما (T°C)
+        temp_section = f"🌡{t}{ZWNJ}°C"
+        # 4. بخش بارش (P%)
+        rain_section = f"☔{p}%{ZWNJ} احتمال بارش"
         
-        # 2. دما (LTR اجباری)
-        # از LRE/PDF برای ایزوله کردن عدد و واحد استفاده می‌شود.
-        temp_section = f"🌡{LRE} {t}°C{PDF}"
-        
-        # 3. بارش (LTR/RTL ترکیب شده)
-        # از LRE/PDF برای ایزوله کردن درصد استفاده می‌شود.
-        rain_section = f"☔{LRE} {p}%{PDF} {ZWNJ}احتمال بارش" 
-        
-        # ترکیب بخش‌ها (RTL)
+        # ترکیب بخش‌ها: استفاده از RLO برای مجبور کردن کل خط به جهت‌گیری صحیح
         forecast_lines.append(
-            f"{time_weather}{SEPARATOR}{temp_section}{SEPARATOR}{rain_section}"
+            f"{RLO}{time_section}{SEPARATOR}{weather_section}{SEPARATOR}{temp_section}{SEPARATOR}{rain_section}"
         )
 
     forecast_text = "\n".join(forecast_lines) 
@@ -209,9 +206,12 @@ def send_message(chat_id, text_html):
 
 # --- اجرای اصلی (بدون تغییر) ---
 def main():
-    latf, lonf = float(LAT), float(LON)
+    # خواندن LAT/LON از محیط
+    latf = float(LAT)
+    lonf = float(LON)
     
     weather_data = fetch_weather_data(latf, lonf)
+    # از مختصات برای AQI استفاده نمی‌کنیم چون مستقیماً ایستگاه پارک شهر را هدف قرار داده‌ایم.
     aqi_value = fetch_air_pollution(latf, lonf) 
     
     caption = format_message(REGION_NAME, weather_data, aqi_value)
