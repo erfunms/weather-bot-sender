@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# send_weather.py — Fix: use RLI/PDI to isolate LTR chunks inside Persian (RTL) text
+# send_weather.py — Includes Tehran Air Quality (Park Shahr) via air.tehran.ir API
 
 import os
 import requests
@@ -9,7 +9,6 @@ import jdatetime
 # ---------- settings ----------
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 VISUALCROSSING_KEY = os.environ.get("VISUALCROSSING_KEY")
-AQICN_TOKEN = os.environ.get("AQICN_TOKEN")
 
 CHAT_IDS = os.environ.get("CHAT_IDS", "")
 REGION_NAME = os.environ.get("REGION_NAME", "پانزده خرداد")
@@ -39,7 +38,7 @@ WEATHER_TRANSLATIONS = {
     "default": "نامشخص ❓",
 }
 
-# ---------- AQI helper ----------
+# ---------- AQI status ----------
 def get_aqi_status(aqi_value):
     if aqi_value in (None, "—"):
         return "⚪️ نامشخص"
@@ -54,13 +53,12 @@ def get_aqi_status(aqi_value):
     if aqi <= 300: return "🟣 بسیار ناسالم"
     return "🟤 خطرناک"
 
-# ---------- LTR isolation using RLI/PDI ----------
+# ---------- LTR isolation ----------
 RLI = "\u2067"
 PDI = "\u2069"
-ZWNJ = "\u200c"  # optional for Persian spacing when needed
+ZWNJ = "\u200c"
 
 def ltr(s: str) -> str:
-    """Wrap s with RLI...PDI so it renders LTR inside RTL text (stable on Telegram)."""
     return f"{RLI}{s}{PDI}"
 
 # ---------- fetch weather ----------
@@ -71,23 +69,29 @@ def fetch_weather_data(lat, lon):
     r.raise_for_status()
     return r.json()
 
-# ---------- fetch AQI (kept AQICN but can be swapped to open-meteo) ----------
-def fetch_air_pollution(lat, lon):
+# ---------- fetch AQI from Tehran Air ----------
+def fetch_tehran_aqi(station_name="پارک شهر"):
+    """
+    Uses air.tehran.ir official API:
+    https://air.tehran.ir/api/Station/GetStationAQI
+    """
     try:
-        url = "https://api.waqi.info/feed/tehran/"
-        params = {"token": AQICN_TOKEN} if AQICN_TOKEN else {}
-        r = requests.get(url, params=params, timeout=15)
+        url = "https://air.tehran.ir/api/Station/GetStationAQI"
+        r = requests.post(url, json={"Station": station_name}, timeout=15)
         r.raise_for_status()
         data = r.json()
-        if data.get("status") == "ok" and "data" in data:
-            return data["data"].get("aqi", "—")
+
+        result = data.get("Result")
+        if result and "AQI" in result:
+            return result["AQI"]
+
     except Exception:
         pass
+
     return "—"
 
 # ---------- format message ----------
 def format_message(region_name, weather_json, aqi_value):
-    # time & date (Iran)
     now_utc = datetime.datetime.utcnow() + datetime.timedelta(hours=3.5)
     j_now = jdatetime.datetime.fromgregorian(datetime=now_utc)
     date_fa = j_now.strftime("%Y/%m/%d")
@@ -95,7 +99,6 @@ def format_message(region_name, weather_json, aqi_value):
     current = weather_json.get("currentConditions", {}) or {}
     desc = WEATHER_TRANSLATIONS.get(current.get("icon", "default"), WEATHER_TRANSLATIONS["default"])
 
-    # current temp/humidity/pop (wrap numeric LTR chunks)
     temp_current = round(current.get("temp", 0), 1)
     humidity = current.get("humidity", "—")
     pop = int(current.get("precipprob", 0)) if current.get("precipprob") is not None else 0
@@ -104,15 +107,14 @@ def format_message(region_name, weather_json, aqi_value):
     humidity_s = ltr(f"{humidity}%")
     pop_s = ltr(f"{pop}%")
 
-    # prepare hours list
     hours = []
     for d in weather_json.get("days", []):
         hours.extend(d.get("hours", []))
 
     start_utc = datetime.datetime.utcnow()
     end_utc = start_utc + datetime.timedelta(hours=24)
-
     temps_24h = []
+
     for h in hours:
         try:
             ts = datetime.datetime.utcfromtimestamp(h.get("datetimeEpoch"))
@@ -127,7 +129,6 @@ def format_message(region_name, weather_json, aqi_value):
     else:
         t_min_s = t_max_s = "—"
 
-    # forecast four points (every ~3 hours)
     forecast_lines = []
     first_future = next((i for i, h in enumerate(hours)
                          if datetime.datetime.utcfromtimestamp(h.get("datetimeEpoch")) > start_utc), 0)
@@ -141,22 +142,20 @@ def format_message(region_name, weather_json, aqi_value):
             ts = datetime.datetime.utcfromtimestamp(h.get("datetimeEpoch")) + datetime.timedelta(hours=3.5)
         except Exception:
             continue
+
         time_str = jdatetime.datetime.fromgregorian(datetime=ts).strftime("%H:%M")
         w_fa = WEATHER_TRANSLATIONS.get(h.get("icon", "default"), "؟")
 
         t_f = round(h.get("temp", 0), 1)
         p_f = int(h.get("precipprob", 0)) if h.get("precipprob") is not None else 0
 
-        # isolate LTR numeric chunks
         t_f_s = ltr(f"{t_f}°C")
         p_f_s = ltr(f"{p_f}%")
 
-        # combine: time (RTL) | weather (RTL) | temp (LTR) | rain (LTR + Persian label)
-        # add a ZWNJ between LTR chunk and Persian word to keep spacing correct
         line = f"🕒 {time_str} | {w_fa} | 🌡 {t_f_s} | ☔ {p_f_s}{ZWNJ} احتمال بارش"
         forecast_lines.append(line)
 
-    aqi_text = get_aqi_status(aqi_value) if aqi_value != "—" else "⚪️ نامشخص"
+    aqi_text = get_aqi_status(aqi_value)
 
     msg = (
         f"🌦 <b>وضعیت آب‌وهوای امروز</b>\n"
@@ -191,8 +190,9 @@ def send_to_telegram(chat_id, msg):
 def main():
     lat, lon = float(LAT), float(LON)
     weather = fetch_weather_data(lat, lon)
-    aqi = fetch_air_pollution(lat, lon) if AQICN_TOKEN else "—"
+    aqi = fetch_tehran_aqi("پارک شهر")
     msg = format_message(REGION_NAME, weather, aqi)
+
     for cid in [c.strip() for c in CHAT_IDS.split(",") if c.strip()]:
         send_to_telegram(cid, msg)
 
