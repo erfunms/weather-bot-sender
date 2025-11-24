@@ -41,8 +41,8 @@ def get_aqi_status(aqi_value):
     except ValueError: return "⚪️ نامشخص"
     if aqi <= 50: return "🟢 پاک"
     elif aqi <= 100: return "🟡 قابل قبول"
-    elif aqi <= 150: return "🟠 ناسالم (حساس)"
-    elif aqi <= 200: return "🔴 ناسالم (همه)"
+    elif aqi <= 150: return "🟠 ناسالم برای گروه‌های حساس"
+    elif aqi <= 200: return "🔴 ناسالم برای تمامی افراد"
     elif aqi <= 300: return "🟣 بسیار ناسالم"
     else: return "🟤 خطرناک"
 
