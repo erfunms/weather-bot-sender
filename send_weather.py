@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# send_weather.py (Final: IQAir Source + LRM Formatting Fix + 24hr Forecast)
+# send_weather.py (Final: IQAir Source + RLM/LRM Formatting Fix + 24hr Forecast)
 
 import os
 import requests
@@ -32,9 +32,6 @@ WEATHER_TRANSLATIONS = {
 }
 
 def get_aqi_status(aqi_value):
-    """
-    بر اساس استاندارد شش‌گانه AQI، وضعیت آلودگی هوا را تعیین و استتوس متناظر را برمی‌گرداند.
-    """
     if aqi_value is None or aqi_value == "—": return "⚪️ نامشخص"
     try:
         aqi = int(aqi_value)
@@ -103,14 +100,16 @@ def format_message(region_name, weather_json, aqi_value):
     temps_24h = [h.get("temp") for h in hours if start <= datetime.datetime.utcfromtimestamp(h.get('datetimeEpoch')) <= end]
     
     # ✅ اصلاح نگارشی مینیمم/ماکزیمم (LRM)
+    # از جداکننده قوی (En Space) به جای | استفاده می‌کنیم.
     t_min = fix_text(f"{round(min(temps_24h), 1)}°C") if temps_24h else "—"
     t_max = fix_text(f"{round(max(temps_24h), 1)}°C") if temps_24h else "—"
     
-    # --- بخش پیش‌بینی ۲۴ ساعته (حذف کاراکتر |) ---
+    # --- بخش پیش‌بینی ۲۴ ساعته (رفع قطعی نگارش) ---
     forecast_lines = []
     start_idx = next((i for i, h in enumerate(hours) if datetime.datetime.utcfromtimestamp(h.get('datetimeEpoch')) > start), 0)
     
-    for i in range(8): # 8 تکرار برای 24 ساعت آینده
+    # 8 تکرار برای 24 ساعت آینده
+    for i in range(8):
         idx = start_idx + (i * 3)
         if idx >= len(hours): break
         h = hours[idx]
@@ -126,8 +125,10 @@ def format_message(region_name, weather_json, aqi_value):
         f_temp = fix_text(f"{t_forecast}°C")
         f_rain = fix_text(f"{p_forecast}%")
         
-        # ⬅️ تغییر نهایی: حذف جداکننده | و استفاده از فضای خالی بیشتر برای ساختار
-        line = f"🕒 {time_str}  {w_fa}  🌡 {f_temp}  ☔ {f_rain} بارش"
+        # ⬅️ تغییر نهایی و قطعی: 
+        # 1. افزودن RLM (\u200F) در ابتدای خط برای تاکید بر راست به چپ بودن خط
+        # 2. استفاده از En Space (\u2002) به عنوان جداکننده قوی برای جلوگیری از پرش
+        line = f"\u200F🕒 {time_str}\u2002{w_fa}\u2002🌡 {f_temp}\u2002☔ {f_rain} بارش"
         forecast_lines.append(line)
 
     # پیام نهایی
@@ -137,7 +138,7 @@ def format_message(region_name, weather_json, aqi_value):
         f"📅 تاریخ: {date_fa}\n"
         f"وضعیت: {desc}\n"
         f"دمای فعلی: {temp_str}\n"
-        f"حداقل: {t_min} | حداکثر: {t_max}\n"
+        f"حداقل: {t_min}\u2002|\u2002حداکثر: {t_max}\n" # استفاده از LRM و En Space برای header
         f"کیفیت هوا: {aqi_value} ({get_aqi_status(aqi_value)})\n\n"
         f"<b>پیش‌بینی ۲۴ ساعت آینده:</b>\n" + "\n".join(forecast_lines)
     )
