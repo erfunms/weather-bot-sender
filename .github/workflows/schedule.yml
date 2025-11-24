@@ -4,9 +4,9 @@ name: Daily Weather Report
 
 on:
   schedule:
-    # ⬅️ زمان‌بندی جدید: فقط یک بار در روز در ساعت 03:00 بامداد (UTC)
-    # این زمان در ایران حدود 6:30 صبح است.
-    - cron: '0 3 * * *' 
+    # ⬅️ تغییر زمان‌بندی: 02:00 بامداد UTC
+    # این زمان در ایران حدود 5:30 صبح است.
+    - cron: '0 2 * * *' 
   workflow_dispatch:
     # این برای تست دستی است
 
@@ -17,10 +17,8 @@ jobs:
     env:
       TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
       VISUALCROSSING_KEY: ${{ secrets.VISUALCROSSING_KEY }}
-      # ⬅️ متغیر جدید برای IQAir
       IQAIR_KEY: ${{ secrets.IQAIR_KEY }}
       
-      # ⬅️ مطمئن شوید این مقادیر در Secrets تعریف شده‌اند
       CHAT_IDS: ${{ secrets.CHAT_IDS }}
       REGION_NAME: ${{ secrets.REGION_NAME }}
       LAT: ${{ secrets.LAT }}
