@@ -1,48 +1,43 @@
-name: Weather Auto Sender ☀️
+# .github/workflows/schedule.yml
+
+name: Daily Weather Report
 
 on:
   schedule:
-    - cron: '30 21 * * *'
-    - cron: '30 4 * * *'
-  workflow_dispatch: {}
+    # ⬅️ زمان‌بندی جدید: فقط یک بار در روز در ساعت 03:00 بامداد (UTC)
+    # این زمان در ایران حدود 6:30 صبح است.
+    - cron: '0 3 * * *' 
+  workflow_dispatch:
+    # این برای تست دستی است
 
 jobs:
-  send:
+  send_report:
     runs-on: ubuntu-latest
+    
+    env:
+      TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+      VISUALCROSSING_KEY: ${{ secrets.VISUALCROSSING_KEY }}
+      # ⬅️ متغیر جدید برای IQAir
+      IQAIR_KEY: ${{ secrets.IQAIR_KEY }}
+      
+      # ⬅️ مطمئن شوید این مقادیر در Secrets تعریف شده‌اند
+      CHAT_IDS: ${{ secrets.CHAT_IDS }}
+      REGION_NAME: ${{ secrets.REGION_NAME }}
+      LAT: ${{ secrets.LAT }}
+      LON: ${{ secrets.LON }}
+      IMAGE_URL: ${{ secrets.IMAGE_URL }}
+
     steps:
-      - name: 📥 Checkout repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: 🐍 Setup Python
-        uses: actions/setup-python@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.x'
 
-      - name: 📦 Install dependencies (FINAL FIX)
-        run: |
-          python3 -m pip install --upgrade pip
-          python3 -m pip install requests jdatetime
-          echo "✅ jdatetime installed successfully."
-          
-      - name: 📅 Run weather sender script
-        env:
-          # --- Secrets اصلی ---
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          
-          # 🚨 خط اصلاح‌شده: فراخوانی کلید جدید Visual Crossing
-          VISUALCROSSING_KEY: ${{ secrets.VISUALCROSSING_KEY }} 
-          
-          CHAT_IDS: ${{ secrets.CHAT_IDS }}
-          REGION_NAME: ${{ secrets.REGION_NAME }}
-          IMAGE_URL: ${{ secrets.IMAGE_URL }}
-          
-          # ⬅️ اطمینان از AQICN
-          AQICN_TOKEN: ${{ secrets.AQICN_TOKEN }}
-          
-        run: |
-          echo "🚀 Starting Weather Bot at $(date -u)"
-          python3 send_weather.py || {
-            echo "❌ Error: Script failed!"
-            exit 1
-          }
-          echo "✅ Weather Bot finished successfully at $(date -u)"
+      - name: Install dependencies
+        run: pip install requests jdatetime
+
+      - name: Run Python script
+        run: python send_weather.py
