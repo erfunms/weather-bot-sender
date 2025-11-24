@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# send_weather.py (Final: IQAir Source + LRM Formatting Fix)
+# send_weather.py (Final: IQAir Source + LRM Formatting Fix + 24hr Forecast)
 
 import os
 import requests
@@ -10,18 +10,15 @@ import jdatetime
 # --- تنظیمات ---
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 VISUALCROSSING_KEY = os.environ.get("VISUALCROSSING_KEY")
-# ⬅️ متغیر جدید برای کلید IQAir
 IQAIR_KEY = os.environ.get("IQAIR_KEY")
 CHAT_IDS = os.environ.get("CHAT_IDS", "")
-REGION_NAME = os.environ.get("REGION_NAME", "تهران") # منطقه پیش‌فرض تهران
+REGION_NAME = os.environ.get("REGION_NAME", "تهران")
 IMAGE_URL = os.environ.get("IMAGE_URL", "")
-# ⬅️ مطمئن شوید LAT/LON در GitHub Secrets برای تهران تنظیم شده‌اند
-LAT = os.environ.get("LAT", "35.6892") 
+LAT = os.environ.get("LAT", "35.6892")
 LON = os.environ.get("LON", "51.3890")
 UNITS = os.environ.get("UNITS", "metric") 
 
 if not TELEGRAM_TOKEN or not VISUALCROSSING_KEY or not IQAIR_KEY:
-    # این پیام به معنی عدم تعریف IQAIR_KEY در Secrets است
     raise SystemExit("Error: Missing Environment Variables (TELEGRAM_TOKEN, VISUALCROSSING_KEY, or IQAIR_KEY).")
 
 # --- دیکشنری‌ها ---
@@ -73,7 +70,6 @@ def fetch_air_pollution(lat, lon):
         r.raise_for_status()
         data = r.json()
         
-        # مسیر AQI (استاندارد آمریکا)
         if data.get("status") == "success":
             return data["data"]["current"]["pollution"]["aqius"]
             
@@ -111,7 +107,8 @@ def format_message(region_name, weather_json, aqi_value):
     forecast_lines = []
     start_idx = next((i for i, h in enumerate(hours) if datetime.datetime.utcfromtimestamp(h.get('datetimeEpoch')) > start), 0)
     
-    for i in range(4):
+    # ⬅️ تغییر برای نمایش 8 خط داده (24 ساعت پیش‌بینی)
+    for i in range(8):
         idx = start_idx + (i * 3)
         if idx >= len(hours): break
         h = hours[idx]
@@ -139,7 +136,7 @@ def format_message(region_name, weather_json, aqi_value):
         f"دمای فعلی: {temp_str}\n"
         f"حداقل: {t_min} | حداکثر: {t_max}\n"
         f"کیفیت هوا: {aqi_value} ({get_aqi_status(aqi_value)})\n\n"
-        f"<b>پیش‌بینی ۱۲ ساعت آینده:</b>\n" + "\n".join(forecast_lines)
+        f"<b>پیش‌بینی ۲۴ ساعت آینده:</b>\n" + "\n".join(forecast_lines)
     )
     return msg
 
