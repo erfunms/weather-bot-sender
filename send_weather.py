@@ -1,152 +1,169 @@
+#!/usr/bin/env python3
+# send_weather.py (Final: IQAir Source + Structural Separation Fix + 24hr Forecast)
+
 import os
 import requests
 import datetime
-from datetime import timezone, timedelta
+import time
+import jdatetime
 
-# ---------------- CONFIG ----------------
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
-VISUAL_API_KEY = os.getenv("VISUAL_API_KEY")
+# --- تنظیمات ---
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+VISUALCROSSING_KEY = os.environ.get("VISUALCROSSING_KEY")
+IQAIR_KEY = os.environ.get("IQAIR_KEY")
+CHAT_IDS = os.environ.get("CHAT_IDS", "")
+REGION_NAME = os.environ.get("REGION_NAME", "تهران")
+IMAGE_URL = os.environ.get("IMAGE_URL", "")
+LAT = os.environ.get("LAT", "35.6892")
+LON = os.environ.get("LON", "51.3890")
+UNITS = os.environ.get("UNITS", "metric") 
 
-REGION_NAME = "پارک شهر (تهران)"
+# --- کاراکترهای کنترل Unicode ---
+LRM = "\u200E" # Left-to-Right Mark (برای محافظت از اعداد)
+EN_SPACE = "\u2002" # جداکننده قوی (En Space)
 
-# ایستگاه پارک‌شهر
-AQI_STATION_URL = "https://air.tehran.ir/api/onlineaqi/GetAllOnlineAQIDetails"
+if not TELEGRAM_TOKEN or not VISUALCROSSING_KEY or not IQAIR_KEY:
+    raise SystemExit("Error: Missing Environment Variables (TELEGRAM_TOKEN, VISUALCROSSING_KEY, or IQAIR_KEY).")
 
-# Tehran coordinates
-LAT = 35.6892
-LON = 51.3890
-# -----------------------------------------
+# --- دیکشنری‌ها ---
+WEATHER_TRANSLATIONS = {
+    "clear-day": "آسمان صاف ☀️", "clear-night": "آسمان صاف 🌙", 
+    "cloudy": "ابری ☁️", "partly-cloudy-day": "نیمه ابری 🌤️",
+    "partly-cloudy-night": "نیمه ابری ☁️", "rain": "باران 🌧️", 
+    "snow": "برف ❄️", "wind": "بادی 🌬️", "fog": "مه 🌫️",
+    "sleet": "باران و برف 🌨️", "hail": "تگرگ 🧊",
+    "thunderstorm": "تندرباد/رعد و برق ⛈️", "default": "نامشخص ❓"
+}
 
-
-# ===== TIME HELPERS =====
-def now_tehran():
-    return datetime.datetime.now(timezone.utc) + timedelta(hours=3.5)
-
-
-def epoch_to_tehran(ts: int):
-    return datetime.datetime.fromtimestamp(ts, timezone.utc) + timedelta(hours=3.5)
-
-
-# ===== AQI PROCESSING =====
-def get_aqi_status(aqi: int):
-    if aqi <= 50:
-        return "🔵 خوب"
-    elif aqi <= 100:
-        return "🟢 قابل قبول"
-    elif aqi <= 150:
-        return "🟡 ناسالم برای گروه‌های حساس"
-    elif aqi <= 200:
-        return "🟠 ناسالم"
-    elif aqi <= 300:
-        return "🔴 بسیار ناسالم"
-    else:
-        return "🟣 خطرناک"
-
-
-def get_tehran_aqi():
+def get_aqi_status(aqi_value):
+    if aqi_value is None or aqi_value == "—": return "⚪️ نامشخص"
     try:
-        r = requests.get(AQI_STATION_URL, timeout=10)
-        r.raise_for_status()
-        data = r.json()
+        aqi = int(aqi_value)
+    except ValueError: return "⚪️ نامشخص"
+    if aqi <= 50: return "🟢 پاک"
+    elif aqi <= 100: return "🟡 قابل قبول"
+    elif aqi <= 150: return "🟠 ناسالم (حساس)"
+    elif aqi <= 200: return "🔴 ناسالم (همه)"
+    elif aqi <= 300: return "🟣 بسیار ناسالم"
+    else: return "🟤 خطرناک"
 
-        for st in data:
-            name = st.get("StationName", "")
-            if "پارک شهر" in name:
-                return int(st.get("AQI", 0))
+# --- تابع کمکی اصلاح جهت متن (LRM) ---
+def fix_text(text):
+    """این تابع اعداد و واحدها را در حصار LRM قرار می‌دهد تا جابجا نشوند"""
+    return f"{LRM}{text}{LRM}"
 
-        return None
-
-    except Exception as e:
-        print("AQI Error:", e)
-        return None
-
-
-# ===== WEATHER API =====
-def get_weather():
-    url = f"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{LAT},{LON}?unitGroup=metric&include=hours&key={VISUAL_API_KEY}"
-
-    r = requests.get(url, timeout=10)
-    r.raise_for_status()
+# --- دریافت آب و هوا (Visual Crossing) ---
+def fetch_weather_data(lat, lon):
+    url = f"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{lat},{lon}"
+    params = {"unitGroup": UNITS, "key": VISUALCROSSING_KEY, "contentType": "json", "include": "current,hours,days"}
+    r = requests.get(url, params=params, timeout=15); r.raise_for_status()
     return r.json()
 
+# --- دریافت آلودگی هوا (IQAir) ---
+def fetch_air_pollution(lat, lon):
+    """دریافت AQI از IQAir که نزدیک‌ترین ایستگاه به مختصات را پیدا می‌کند"""
+    url = "http://api.airvisual.com/v2/nearest_city"
+    params = {
+        "lat": lat,
+        "lon": lon,
+        "key": IQAIR_KEY
+    }
+    try:
+        r = requests.get(url, params=params, timeout=15)
+        r.raise_for_status()
+        data = r.json()
+        
+        if data.get("status") == "success":
+            return data["data"]["current"]["pollution"]["aqius"]
+            
+    except Exception as e:
+        print(f"IQAir Error: {e}")
+        pass
+    return "—" 
 
-# ===== MESSAGE FORMATTER =====
-def format_message(region, weather, aqi_value):
+# --- فرمت پیام ---
+def format_message(region_name, weather_json, aqi_value):
+    # زمان
+    now = datetime.datetime.utcnow() + datetime.timedelta(hours=3.5)
+    j_now = jdatetime.datetime.fromgregorian(datetime=now)
+    date_fa = j_now.strftime("%Y/%m/%d")
+    
+    # داده‌های فعلی
+    current = weather_json.get("currentConditions", {})
+    desc = WEATHER_TRANSLATIONS.get(current.get("icon", "default"), "نامشخص")
+    temp_val = round(current.get("temp", 0), 1)
+    
+    # ✅ اصلاح نگارشی دمای فعلی (LRM)
+    temp_str = fix_text(f"{temp_val}°C")
+    
+    # محاسبه مینیمم/ماکزیمم 24 ساعته
+    hours = []
+    for d in weather_json.get("days", []): hours.extend(d.get("hours", []))
+    start = datetime.datetime.utcnow(); end = start + datetime.timedelta(hours=24)
+    temps_24h = [h.get("temp") for h in hours if start <= datetime.datetime.utcfromtimestamp(h.get('datetimeEpoch')) <= end]
+    
+    # ✅ اصلاح نگارشی مینیمم/ماکزیمم (LRM)
+    t_min = fix_text(f"{round(min(temps_24h), 1)}°C") if temps_24h else "—"
+    t_max = fix_text(f"{round(max(temps_24h), 1)}°C") if temps_24h else "—"
+    
+    # --- بخش پیش‌بینی ۲۴ ساعته (تفکیک دو خطی) ---
+    forecast_lines = []
+    start_idx = next((i for i, h in enumerate(hours) if datetime.datetime.utcfromtimestamp(h.get('datetimeEpoch')) > start), 0)
+    
+    for i in range(8): # 8 تکرار برای 24 ساعت آینده
+        idx = start_idx + (i * 3)
+        if idx >= len(hours): break
+        h = hours[idx]
+        
+        ts = datetime.datetime.utcfromtimestamp(h.get('datetimeEpoch')) + datetime.timedelta(hours=3.5)
+        time_str = jdatetime.datetime.fromgregorian(datetime=ts).strftime("%H:%M")
+        w_fa = WEATHER_TRANSLATIONS.get(h.get("icon", "default"), "؟")
+        
+        t_forecast = round(h.get("temp", 0), 1)
+        p_forecast = int(h.get("precipprob", 0))
+        
+        # ✅ اصلاح نگارشی مقادیر پیش‌بینی (LRM)
+        f_temp = fix_text(f"{t_forecast}°C")
+        f_rain = fix_text(f"{p_forecast}%")
+        
+        # ⬅️ خط اول: زمان و وضعیت کلی
+        line1 = f"• 🕒 {time_str} {EN_SPACE}|{EN_SPACE} {w_fa}"
+        forecast_lines.append(line1)
 
-    now = now_tehran().strftime("%H:%M")
+        # ⬅️ خط دوم: دما و بارش (تفکیک کامل)
+        line2 = f"   🌡 دما: {f_temp} {EN_SPACE}|{EN_SPACE} ☔ بارش: {f_rain}"
+        forecast_lines.append(line2)
+        
+        # افزودن یک خط خالی برای جداسازی بهتر هر 3 ساعت
+        forecast_lines.append("")
 
-    today = weather["days"][0]
-    tomorrow = weather["days"][1]
-
-    # next 12 hours
-    current_time = datetime.datetime.now(timezone.utc)
-    end_time = current_time + timedelta(hours=12)
-
-    next_hours = [
-        h for h in today["hours"]
-        if current_time <= datetime.datetime.fromtimestamp(h["datetimeEpoch"], timezone.utc) <= end_time
-    ]
-
-    # Find next weather event
-    next_event = None
-    for h in today["hours"]:
-        if datetime.datetime.fromtimestamp(h["datetimeEpoch"], timezone.utc) > current_time:
-            if h.get("precip", 0) > 0:
-                next_event = (h["conditions"], epoch_to_tehran(h["datetimeEpoch"]).strftime("%H:%M"))
-                break
-
-    # Build message
+    # پیام نهایی
     msg = (
-        f"🌤️ گزارش آب‌وهوا - {region}\n"
-        f"⏰ ساعت: {now}\n\n"
-
-        f"📌 وضعیت فعلی:\n"
-        f"دمـا: {today['temp']}°C\n"
-        f"رطـوبت: {today['humidity']}٪\n"
-        f"احساس واقعی: {today['feelslike']}°C\n\n"
-
-        f"🌫️ کیفیت هوا:\n"
-        f"{aqi_value} - {get_aqi_status(aqi_value)}\n\n"
-
-        f"☀️ پیش‌بینی امروز:\n"
-        f"حداقل: {today['tempmin']}°C\n"
-        f"حداکثر: {today['tempmax']}°C\n"
-        f"خلاصه: {today['conditions']}\n\n"
-
-        f"📅 فردا:\n"
-        f"حداقل: {tomorrow['tempmin']}°C\n"
-        f"حداکثر: {tomorrow['tempmax']}°C\n"
-        f"وضعیت: {tomorrow['conditions']}\n\n"
+        f"🌦 <b>وضعیت آب‌وهوای امروز</b>\n"
+        f"📍 منطقه: {region_name}\n"
+        f"📅 تاریخ: {date_fa}\n"
+        f"وضعیت: {desc}\n"
+        f"دمای فعلی: {temp_str}\n"
+        # استفاده از LRM و En Space برای header
+        f"حداقل: {t_min}{EN_SPACE}|{EN_SPACE}حداکثر: {t_max}\n" 
+        f"کیفیت هوا: {aqi_value} ({get_aqi_status(aqi_value)})\n\n"
+        f"<b>پیش‌بینی ۲۴ ساعت آینده:</b>\n" + "\n".join(forecast_lines)
     )
-
-    # Add rain/snow event
-    if next_event:
-        cond, t = next_event
-        msg += f"🌧️ اولین رویداد: {cond} در ساعت {t}\n\n"
-
-    msg += "🕒 پیش‌بینی ۱۲ ساعت آینده:\n"
-    for h in next_hours:
-        ts = epoch_to_tehran(h["datetimeEpoch"]).strftime("%H:%M")
-        msg += f"{ts} — {h['temp']}°C — {h['conditions']}\n"
-
     return msg
 
-
-# ===== TELEGRAM =====
-def send_telegram_message(text):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {"chat_id": CHAT_ID, "text": text}
-    requests.post(url, data=payload, timeout=10)
-
-
-# ===== MAIN =====
+# --- ارسال ---
 def main():
-    weather = get_weather()
-    aqi = get_tehran_aqi() or "نامشخص"
-    msg = format_message(REGION_NAME, weather, aqi)
-    send_telegram_message(msg)
+    lat, lon = float(LAT), float(LON)
+    wd = fetch_weather_data(lat, lon)
+    aqi = fetch_air_pollution(lat, lon)
+    msg = format_message(REGION_NAME, wd, aqi)
+    
+    for cid in [c.strip() for c in CHAT_IDS.split(",") if c.strip()]:
+        try:
+            url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto" if IMAGE_URL else f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+            data = {"chat_id": cid, "caption" if IMAGE_URL else "text": msg, "parse_mode": "HTML"}
+            if IMAGE_URL: data["photo"] = IMAGE_URL
+            requests.post(url, data=data, timeout=20)
+        except Exception as e: print(f"Error: {e}")
 
-
-if __name__ == "__main__":
-    main()
+if __name__ == "__main__": main()
