@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# send_weather.py (Final: IQAir Source + RLM/LRM Formatting Fix + 24hr Forecast)
+# send_weather.py (Final: IQAir Source + RLE/PDF Absolute Formatting Fix + 24hr Forecast)
 
 import os
 import requests
@@ -17,6 +17,12 @@ IMAGE_URL = os.environ.get("IMAGE_URL", "")
 LAT = os.environ.get("LAT", "35.6892")
 LON = os.environ.get("LON", "51.3890")
 UNITS = os.environ.get("UNITS", "metric") 
+
+# --- کاراکترهای کنترل Unicode برای نگارش ---
+LRM = "\u200E" # Left-to-Right Mark (برای محافظت از اعداد)
+RLE = "\u202B" # Right-to-Left Embedding (شروع بلاک قوی RTL)
+PDF = "\u202C" # Pop Directional Formatting (بستن بلاک قوی RTL)
+EN_SPACE = "\u2002" # جداکننده قوی (En Space)
 
 if not TELEGRAM_TOKEN or not VISUALCROSSING_KEY or not IQAIR_KEY:
     raise SystemExit("Error: Missing Environment Variables (TELEGRAM_TOKEN, VISUALCROSSING_KEY, or IQAIR_KEY).")
@@ -46,7 +52,6 @@ def get_aqi_status(aqi_value):
 # --- تابع کمکی اصلاح جهت متن (LRM) ---
 def fix_text(text):
     """این تابع اعداد و واحدها را در حصار LRM قرار می‌دهد تا جابجا نشوند"""
-    LRM = "\u200E"
     return f"{LRM}{text}{LRM}"
 
 # --- دریافت آب و هوا (Visual Crossing) ---
@@ -100,16 +105,14 @@ def format_message(region_name, weather_json, aqi_value):
     temps_24h = [h.get("temp") for h in hours if start <= datetime.datetime.utcfromtimestamp(h.get('datetimeEpoch')) <= end]
     
     # ✅ اصلاح نگارشی مینیمم/ماکزیمم (LRM)
-    # از جداکننده قوی (En Space) به جای | استفاده می‌کنیم.
     t_min = fix_text(f"{round(min(temps_24h), 1)}°C") if temps_24h else "—"
     t_max = fix_text(f"{round(max(temps_24h), 1)}°C") if temps_24h else "—"
     
-    # --- بخش پیش‌بینی ۲۴ ساعته (رفع قطعی نگارش) ---
+    # --- بخش پیش‌بینی ۲۴ ساعته (رفع قطعی نگارش RLE/PDF) ---
     forecast_lines = []
     start_idx = next((i for i, h in enumerate(hours) if datetime.datetime.utcfromtimestamp(h.get('datetimeEpoch')) > start), 0)
     
-    # 8 تکرار برای 24 ساعت آینده
-    for i in range(8):
+    for i in range(8): # 8 تکرار برای 24 ساعت آینده
         idx = start_idx + (i * 3)
         if idx >= len(hours): break
         h = hours[idx]
@@ -125,10 +128,9 @@ def format_message(region_name, weather_json, aqi_value):
         f_temp = fix_text(f"{t_forecast}°C")
         f_rain = fix_text(f"{p_forecast}%")
         
-        # ⬅️ تغییر نهایی و قطعی: 
-        # 1. افزودن RLM (\u200F) در ابتدای خط برای تاکید بر راست به چپ بودن خط
-        # 2. استفاده از En Space (\u2002) به عنوان جداکننده قوی برای جلوگیری از پرش
-        line = f"\u200F🕒 {time_str}\u2002{w_fa}\u2002🌡 {f_temp}\u2002☔ {f_rain} بارش"
+        # ⬅️ تغییر نهایی: افزودن RLE در ابتدا و PDF در انتها برای تضمین جهت RTL
+        line_content = f"🕒 {time_str}{EN_SPACE}{w_fa}{EN_SPACE}🌡 {f_temp}{EN_SPACE}☔ {f_rain} بارش"
+        line = f"{RLE}{line_content}{PDF}"
         forecast_lines.append(line)
 
     # پیام نهایی
@@ -138,7 +140,8 @@ def format_message(region_name, weather_json, aqi_value):
         f"📅 تاریخ: {date_fa}\n"
         f"وضعیت: {desc}\n"
         f"دمای فعلی: {temp_str}\n"
-        f"حداقل: {t_min}\u2002|\u2002حداکثر: {t_max}\n" # استفاده از LRM و En Space برای header
+        # استفاده از LRM و En Space برای header
+        f"حداقل: {t_min}{EN_SPACE}|{EN_SPACE}حداکثر: {t_max}\n" 
         f"کیفیت هوا: {aqi_value} ({get_aqi_status(aqi_value)})\n\n"
         f"<b>پیش‌بینی ۲۴ ساعت آینده:</b>\n" + "\n".join(forecast_lines)
     )
