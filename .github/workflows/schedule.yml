@@ -4,11 +4,11 @@ name: Daily Weather Report
 
 on:
   schedule:
-    # ⬅️ تغییر زمان‌بندی: 02:00 بامداد UTC
-    # این زمان در ایران حدود 5:30 صبح است.
-    - cron: '0 2 * * *' 
+    # ⬅️ زمان‌بندی نهایی: 23:30 شب قبل به وقت UTC
+    # این زمان دقیقاً معادل 3:00 بامداد به وقت ایران است.
+    - cron: '30 23 * * *' 
   workflow_dispatch:
-    # این برای تست دستی است
+    # این امکان تست دستی را از طریق رابط GitHub فراهم می‌کند
 
 jobs:
   send_report:
@@ -17,8 +17,9 @@ jobs:
     env:
       TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
       VISUALCROSSING_KEY: ${{ secrets.VISUALCROSSING_KEY }}
-      IQAIR_KEY: ${{ secrets.IQAIR_KEY }}
+      IQAIR_KEY: ${{ secrets.IQAIR_KEY }} 
       
+      # متغیرهای مکان و چت
       CHAT_IDS: ${{ secrets.CHAT_IDS }}
       REGION_NAME: ${{ secrets.REGION_NAME }}
       LAT: ${{ secrets.LAT }}
